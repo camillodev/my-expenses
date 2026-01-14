@@ -20,6 +20,37 @@ export interface Transaction {
   category?: string;
   date: string;
   description?: string;
+  currencyCode?: string;
+  balance?: number;
+  status?: string; // 'PENDING' | 'POSTED'
+  type?: string; // 'DEBIT' | 'CREDIT'
+  providerCode?: string;
+  paymentData?: {
+    payer?: {
+      documentNumber?: { value?: string; type?: 'CPF' | 'CNPJ' };
+      name?: string;
+      accountNumber?: string;
+      branchNumber?: string;
+      routingNumber?: string;
+    };
+    receiver?: {
+      documentNumber?: { value?: string; type?: 'CPF' | 'CNPJ' };
+      name?: string;
+      accountNumber?: string;
+      branchNumber?: string;
+      routingNumber?: string;
+    };
+    paymentMethod?: string;
+    referenceNumber?: string;
+    reason?: string;
+  };
+  merchant?: {
+    name: string;
+    businessName: string;
+    cnpj: string;
+    cnae?: string;
+    category?: string;
+  };
   accounts?: Account;
 }
 

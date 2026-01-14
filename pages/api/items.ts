@@ -113,7 +113,7 @@ export default async function handler(
           accountsSaved++;
         }
 
-        // Salvar/atualizar transações no Supabase
+        // Salvar/atualizar transações no Supabase com todos os campos disponíveis
         if (accountTransactions.length > 0) {
           const { error: txError, data: txData } = await supabase
             .from('transactions')
@@ -122,8 +122,16 @@ export default async function handler(
                 id: tx.id,
                 accountId: tx.accountId,
                 amount: tx.amount,
-                category: tx.category,
+                category: tx.category || null,
                 date: tx.date,
+                description: tx.description || null,
+                currencyCode: tx.currencyCode || null,
+                balance: tx.balance !== undefined ? tx.balance : null,
+                status: tx.status || null,
+                type: tx.type || null,
+                providerCode: tx.providerCode || null,
+                paymentData: tx.paymentData ? JSON.parse(JSON.stringify(tx.paymentData)) : null,
+                merchant: tx.merchant ? JSON.parse(JSON.stringify(tx.merchant)) : null,
               })),
               {
                 onConflict: 'id'

@@ -36,3 +36,11 @@ yarn-error.log*
 next-env.d.ts
 
 .env
+
+# Cursor debug logs
+supabase/config.toml
+.cursor/debug.log
+.cursor/*.log
+
+/*.md
+/*.sql

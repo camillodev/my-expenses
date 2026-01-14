@@ -47,16 +47,38 @@ export default async function handler(
 
       for (const account of accounts.results) {
         try {
+          // Fetch full account details
+          const accountDetails = await client.fetchAccount(account.id);
           const accountTransactions = await client.fetchAllTransactions(account.id);
           transactions.push(...accountTransactions);
 
-          // Salvar/atualizar conta no Supabase
+          // Extract credit card specific fields
+          const creditLimit = (accountDetails as any).creditLimit || 
+                             (accountDetails as any).creditData?.limit || 
+                             (accountDetails as any).limit || 
+                             null;
+          const availableCredit = (accountDetails as any).availableCredit || 
+                                 (accountDetails as any).creditData?.availableCredit || 
+                                 (accountDetails as any).available || 
+                                 null;
+
+          // Prepare account data for Supabase
+          const accountDataToSave: any = {
+            id: account.id,
+            itemId: account.itemId,
+            name: accountDetails.name || null,
+            type: accountDetails.type || null,
+            subtype: accountDetails.subtype || null,
+            balance: accountDetails.balance !== undefined ? accountDetails.balance : null,
+            currencyCode: accountDetails.currencyCode || null,
+            creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : null,
+            availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : null,
+          };
+
+          // Salvar/atualizar conta no Supabase com todos os campos
           const { error: accountError, data: accountData } = await supabase
             .from('accounts')
-            .upsert({ 
-              id: account.id, 
-              itemId: account.itemId 
-            }, {
+            .upsert(accountDataToSave, {
               onConflict: 'id'
             })
             .select();
@@ -67,7 +89,7 @@ export default async function handler(
             errors.push(errorMsg);
           }
 
-          // Salvar/atualizar transações no Supabase
+          // Salvar/atualizar transações no Supabase com todos os campos disponíveis
           if (accountTransactions.length > 0) {
             const { error: txError, data: txData } = await supabase
               .from('transactions')
@@ -76,8 +98,16 @@ export default async function handler(
                   id: tx.id,
                   accountId: tx.accountId,
                   amount: tx.amount,
-                  category: tx.category,
+                  category: tx.category || null,
                   date: tx.date,
+                  description: tx.description || null,
+                  currencyCode: tx.currencyCode || null,
+                  balance: tx.balance !== undefined ? tx.balance : null,
+                  status: tx.status || null,
+                  type: tx.type || null,
+                  providerCode: tx.providerCode || null,
+                  paymentData: tx.paymentData ? JSON.parse(JSON.stringify(tx.paymentData)) : null,
+                  merchant: tx.merchant ? JSON.parse(JSON.stringify(tx.merchant)) : null,
                 })),
                 {
                   onConflict: 'id'

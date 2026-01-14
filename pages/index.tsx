@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu, PiggyBank, TrendingDown } from 'lucide-react';
 import { useFinancialData, type Account, type Transaction } from '@/hooks/useFinancialData';
+import { Navbar } from '@/components/Navbar';
 
 const PluggyConnect = dynamic(
   () => (import('react-pluggy-connect') as any).then((mod: { PluggyConnect: any; }) => mod.PluggyConnect),
@@ -46,6 +47,7 @@ export default function Home() {
   const [banks, setBanks] = useState<Bank[]>([])
   const [bankConnectors, setBankConnectors] = useState<BankConnector[]>([])
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false)
+  const [activeTab, setActiveTab] = useState<string>('overview')
 
   // Usar o hook useFinancialData para gerenciar dados financeiros
   const {
@@ -369,12 +371,113 @@ export default function Home() {
     return 'bg-green-100 text-green-700 border-green-200'
   }
 
+  // Definir os 4 bancos fixos
+  const TARGET_BANKS = [
+    { name: 'Nubank', searchNames: ['Nubank', 'Nu', 'Nu Bank'] },
+    { name: 'Bradesco', searchNames: ['Bradesco'] },
+    { name: 'XP', searchNames: ['XP', 'XP Investimentos'] },
+    { name: 'BTG', searchNames: ['BTG', 'BTG Banking', 'BTG Pactual', 'BTG Investimentos'] },
+  ]
+
+  // Interface para dados do card de banco
+  interface BankCardData {
+    bankName: string
+    connectorId: number | null
+    isConnected: boolean
+    checkingBalance: number
+    creditCardBill: number
+    availableLimit: number
+    investmentsTotal: number
+  }
+
+  // Obter contas de um banco específico
+  const getBankAccounts = (bankName: string): Account[] => {
+    // Encontrar itemIds que correspondem ao banco
+    const targetBank = TARGET_BANKS.find(tb => tb.name === bankName)
+    if (!targetBank) return []
+
+    const bankItemIds = banks
+      .filter(bank => {
+        const bankNameLower = bank.bankName.toLowerCase()
+        return targetBank.searchNames.some(sn => 
+          bankNameLower.includes(sn.toLowerCase()) || 
+          sn.toLowerCase().includes(bankNameLower)
+        )
+      })
+      .map(bank => bank.itemId)
+
+    // Retornar contas que pertencem a esses itemIds
+    return accounts.filter(acc => bankItemIds.includes(acc.itemId))
+  }
+
+  // Calcular métricas de um banco
+  const calculateBankMetrics = (bankName: string): BankCardData => {
+    const bankAccounts = getBankAccounts(bankName)
+    // Buscar connector que corresponde ao banco (pode ter nomes diferentes)
+    const targetBank = TARGET_BANKS.find(tb => tb.name === bankName)
+    const connector = bankConnectors.find(bc => {
+      if (!targetBank) return false
+      const connectorNameLower = (bc.name || '').toLowerCase()
+      return targetBank.searchNames.some(sn => 
+        connectorNameLower.includes(sn.toLowerCase()) ||
+        sn.toLowerCase().includes(connectorNameLower)
+      )
+    })
+    
+    // Conta corrente: soma de saldos de contas checking ou bank
+    const checkingBalance = bankAccounts
+      .filter(acc => acc.subtype === 'checking' || acc.type === 'bank' || (!acc.type && acc.subtype !== 'credit_card'))
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0)
+
+    // Fatura do cartão: soma de saldos negativos de cartões de crédito
+    const creditCards = bankAccounts.filter(acc => acc.subtype === 'credit_card')
+    const creditCardBill = creditCards
+      .reduce((sum, acc) => {
+        const balance = acc.balance || 0
+        return sum + (balance < 0 ? Math.abs(balance) : 0)
+      }, 0)
+
+    // Limite disponível: calcular baseado em um limite estimado (10k por cartão - fatura)
+    const availableLimit = creditCards
+      .reduce((sum, acc) => {
+        const balance = acc.balance || 0
+        const estimatedLimit = 10000 // Limite estimado padrão
+        return sum + Math.max(0, estimatedLimit + balance)
+      }, 0)
+
+    // Investimentos totais: soma de saldos de contas de investimento
+    const investmentsTotal = bankAccounts
+      .filter(acc => 
+        acc.type === 'investment' || 
+        acc.subtype === 'investment' ||
+        acc.subtype === 'brokerage' ||
+        acc.subtype === 'mutual_fund'
+      )
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0)
+
+    return {
+      bankName,
+      connectorId: connector?.connectorId || null,
+      isConnected: connector?.isConnected || false,
+      checkingBalance,
+      creditCardBill,
+      availableLimit,
+      investmentsTotal,
+    }
+  }
+
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex flex-col h-screen bg-slate-50">
       <Head>
         <title>Pluggy My Expenses</title>
         <link rel="stylesheet" href="https://maxst.icons8.com/vue-static/landings/line-awesome/line-awesome/1.3.0/css/line-awesome.min.css"></link>
       </Head>
+
+      <Navbar activeTab={activeTab} onTabChange={(tab) => {
+        setActiveTab(tab)
+        // Scroll to top when changing tabs
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+      }} />
 
       <Sidebar 
         onConnectBank={() => handleConnectBank()}
@@ -423,21 +526,21 @@ export default function Home() {
 
       <main className="flex-1 lg:ml-64 overflow-auto">
         {/* Mobile Menu Button */}
-        <div className="lg:hidden fixed top-4 left-4 z-30">
+        <div className="lg:hidden fixed top-20 left-4 z-30">
           <Button
             variant="outline"
             size="icon"
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="bg-white"
+            className="bg-white shadow-md"
           >
             <Menu className="h-5 w-5" />
           </Button>
         </div>
-        <div className="p-4 lg:p-6 pt-16 lg:pt-6">
-          <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-6">
+        <div className="p-4 lg:p-6 pt-4 lg:pt-6">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="hidden">
               <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-              <TabsTrigger value="accounts">Contas</TabsTrigger>
+              <TabsTrigger value="banks">Bancos</TabsTrigger>
               <TabsTrigger value="cards">Cartões</TabsTrigger>
               <TabsTrigger value="loans">Empréstimos</TabsTrigger>
               <TabsTrigger value="bills">Boletos</TabsTrigger>
@@ -564,253 +667,95 @@ export default function Home() {
               </Card>
             </TabsContent>
 
-            {/* Aba Contas */}
-            <TabsContent value="accounts" className="space-y-6">
+            {/* Aba Bancos */}
+            <TabsContent value="banks" className="space-y-6">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-slate-900">Contas</h2>
+                <p className="text-sm text-muted-foreground mt-1">Visualize suas contas por banco</p>
+              </div>
+              
               {loading ? (
-                <div className="space-y-6">
-                  {Array.from({ length: 2 }).map((_, index) => (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, index) => (
                     <Card key={index}>
                       <CardHeader>
-                        <Skeleton className="h-6 w-48 mb-4" />
+                        <Skeleton className="h-6 w-32 mb-4" />
                       </CardHeader>
-                      <CardContent>
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                          {Array.from({ length: 3 }).map((_, i) => (
-                            <Skeleton key={i} className="h-32" />
-                          ))}
-                        </div>
+                      <CardContent className="space-y-4">
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-8 w-32" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-8 w-32" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-8 w-32" />
+                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-8 w-32" />
                       </CardContent>
                     </Card>
                   ))}
                 </div>
-              ) : (() => {
-                // Group accounts by bank (itemId)
-                const accountsByBank = new Map<string, Account[]>();
-                accounts.forEach(acc => {
-                  const bankAccounts = accountsByBank.get(acc.itemId) || [];
-                  bankAccounts.push(acc);
-                  accountsByBank.set(acc.itemId, bankAccounts);
-                });
-
-                // Get connected banks
-                const connectedBanks = banks.map(bank => {
-                  const bankAccounts = accountsByBank.get(bank.itemId) || [];
-                  const bankingAccounts = bankAccounts.filter(acc => 
-                    acc.subtype === 'checking' || acc.subtype === 'savings' || 
-                    (acc.type === 'bank' && acc.subtype !== 'credit_card')
-                  );
-                  const creditCardAccounts = bankAccounts.filter(acc => 
-                    acc.subtype === 'credit_card' || acc.type === 'credit'
-                  );
-                  const investmentAccounts = bankAccounts.filter(acc => 
-                    acc.type === 'investment' || 
-                    acc.subtype === 'investment' ||
-                    acc.subtype === 'brokerage' ||
-                    acc.subtype === 'mutual_fund'
-                  );
-                  const totalInvestments = investmentAccounts.reduce((sum, acc) => 
-                    sum + (acc.balance || 0), 0
-                  );
-
-                  return {
-                    ...bank,
-                    bankingAccounts,
-                    creditCardAccounts,
-                    investmentAccounts,
-                    totalInvestments
-                  };
-                });
-
-                // Get available banks (not connected)
-                const availableBanks = bankConnectors.filter(connector => !connector.isConnected);
-
-                if (connectedBanks.length === 0 && availableBanks.length === 0) {
-                  return (
-                    <Card>
-                      <CardContent className="py-8 text-center text-muted-foreground">
-                        Nenhum banco encontrado. Conecte um banco para começar.
-                      </CardContent>
-                    </Card>
-                  );
-                }
-
-                return (
-                  <div className="space-y-8">
-                    {/* Connected Banks */}
-                    {connectedBanks.length > 0 && (
-                      <div className="space-y-6">
-                        <h2 className="text-2xl font-bold text-slate-900">Bancos Conectados</h2>
-                        {connectedBanks.map((bank) => (
-                          <Card key={bank.itemId} className="border-2">
-                            <CardHeader>
-                              <div className="flex items-center justify-between">
-                                <CardTitle className="text-xl">{bank.bankName}</CardTitle>
-                                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                                  bank.status === 'UPDATED' 
-                                    ? 'bg-green-100 text-green-700' 
-                                    : 'bg-yellow-100 text-yellow-700'
-                                }`}>
-                                  {bank.status === 'UPDATED' ? 'Conectado' : bank.status}
-                                </span>
-                              </div>
-                            </CardHeader>
-                            <CardContent className="space-y-6">
-                              {/* Banking Accounts Section */}
-                              {bank.bankingAccounts.length > 0 && (
-                                <div className="space-y-3">
-                                  <div className="flex items-center gap-2">
-                                    <Building2 className="h-5 w-5 text-slate-600" />
-                                    <h3 className="text-lg font-semibold text-slate-900">Contas Bancárias</h3>
-                                  </div>
-                                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                    {bank.bankingAccounts.map((account) => {
-                                      const AccountIcon = getAccountIcon(account);
-                                      const typeLabel = getAccountTypeLabel(account);
-                                      const badgeColor = getAccountTypeBadgeColor(account);
-                                      return (
-                                        <Card key={account.id} className="border">
-                                          <CardHeader className="pb-3">
-                                            <div className="flex items-center justify-between">
-                                              <CardTitle className="text-base">{account.name || 'Conta'}</CardTitle>
-                                              <AccountIcon className="h-4 w-4 text-slate-400" />
-                                            </div>
-                                            <CardDescription className="text-xs">•••• {getLastFourDigits(account)}</CardDescription>
-                                            <div className="mt-1">
-                                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${badgeColor}`}>
-                                                {typeLabel}
-                                              </span>
-                                            </div>
-                                          </CardHeader>
-                                          <CardContent>
-                                            <p className={`text-xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                              {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                                            </p>
-                                          </CardContent>
-                                        </Card>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Credit Cards Section */}
-                              {bank.creditCardAccounts.length > 0 && (
-                                <div className="space-y-3 border-t pt-4">
-                                  <div className="flex items-center gap-2">
-                                    <CreditCard className="h-5 w-5 text-purple-600" />
-                                    <h3 className="text-lg font-semibold text-slate-900">Cartões de Crédito</h3>
-                                  </div>
-                                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                                    {bank.creditCardAccounts.map((account) => {
-                                      const currentInvoice = Math.abs(account.balance || 0);
-                                      const creditLimit = account.creditLimit || 0;
-                                      const availableCredit = account.availableCredit || 
-                                        (creditLimit > 0 ? creditLimit - currentInvoice : 0);
-                                      return (
-                                        <Card key={account.id} className="border">
-                                          <CardHeader className="pb-3">
-                                            <div className="flex items-center justify-between">
-                                              <CardTitle className="text-base">{account.name || 'Cartão'}</CardTitle>
-                                              <CreditCard className="h-4 w-4 text-purple-500" />
-                                            </div>
-                                            <CardDescription className="text-xs">•••• {getLastFourDigits(account)}</CardDescription>
-                                          </CardHeader>
-                                          <CardContent className="space-y-2">
-                                            <div>
-                                              <p className="text-xs text-muted-foreground">Fatura Atual</p>
-                                              <p className="text-lg font-bold text-red-600">
-                                                {account.currencyCode || 'R$'} {currentInvoice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                              </p>
-                                            </div>
-                                            {creditLimit > 0 && (
-                                              <div className="pt-2 border-t">
-                                                <p className="text-xs text-muted-foreground">Limite</p>
-                                                <p className="text-sm font-semibold text-slate-700">
-                                                  {account.currencyCode || 'R$'} {creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </p>
-                                              </div>
-                                            )}
-                                            {availableCredit > 0 && (
-                                              <div>
-                                                <p className="text-xs text-muted-foreground">Disponível</p>
-                                                <p className="text-sm font-semibold text-green-600">
-                                                  {account.currencyCode || 'R$'} {availableCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </CardContent>
-                                        </Card>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Investments Section */}
-                              {bank.investmentAccounts.length > 0 && (
-                                <div className="space-y-3 border-t pt-4">
-                                  <div className="flex items-center gap-2">
-                                    <TrendingUp className="h-5 w-5 text-blue-600" />
-                                    <h3 className="text-lg font-semibold text-slate-900">Investimentos</h3>
-                                  </div>
-                                  <Card className="bg-blue-50 border-blue-200">
-                                    <CardContent className="py-4">
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <p className="text-sm text-muted-foreground">Total em Investimentos</p>
-                                          <p className="text-2xl font-bold text-blue-600">
-                                            {bank.investmentAccounts[0]?.currencyCode || 'R$'} {bank.totalInvestments.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                          </p>
-                                        </div>
-                                        <TrendingUp className="h-8 w-8 text-blue-500" />
-                                      </div>
-                                      <p className="text-xs text-muted-foreground mt-2">
-                                        {bank.investmentAccounts.length} {bank.investmentAccounts.length === 1 ? 'conta' : 'contas'} de investimento
-                                      </p>
-                                    </CardContent>
-                                  </Card>
-                                </div>
-                              )}
-
-                              {bank.bankingAccounts.length === 0 && bank.creditCardAccounts.length === 0 && bank.investmentAccounts.length === 0 && (
-                                <p className="text-sm text-muted-foreground text-center py-4">
-                                  Nenhuma conta encontrada para este banco
+              ) : (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  {TARGET_BANKS.map((targetBank) => {
+                    const metrics = calculateBankMetrics(targetBank.name)
+                    const connector = bankConnectors.find(bc => bc.name === targetBank.name)
+                    
+                    return (
+                      <Card key={targetBank.name} className="border-2">
+                        <CardHeader>
+                          <CardTitle className="text-xl">{targetBank.name}</CardTitle>
+                          {metrics.isConnected && (
+                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 mt-2 inline-block">
+                              Conectado
+                            </span>
+                          )}
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          {metrics.isConnected ? (
+                            <>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Conta Corrente</p>
+                                <p className={`text-lg font-bold ${metrics.checkingBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  R$ {metrics.checkingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
-                              )}
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Available Banks (Not Connected) */}
-                    {availableBanks.length > 0 && (
-                      <div className="space-y-6">
-                        <h2 className="text-2xl font-bold text-slate-900">Bancos Disponíveis</h2>
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                          {availableBanks.map((connector) => (
-                            <Card key={connector.name} className="border-2 border-dashed">
-                              <CardHeader>
-                                <CardTitle className="text-lg">{connector.name}</CardTitle>
-                                <CardDescription>Não conectado</CardDescription>
-                              </CardHeader>
-                              <CardContent>
-                                <Button
-                                  onClick={() => handleConnectBank(connector.connectorId || null)}
-                                  className="w-full"
-                                  size="lg"
-                                >
-                                  Conectar
-                                </Button>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Fatura do Cartão</p>
+                                <p className="text-lg font-bold text-red-600">
+                                  R$ {metrics.creditCardBill.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Limite Disponível</p>
+                                <p className="text-lg font-bold text-green-600">
+                                  R$ {metrics.availableLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground mb-1">Investimentos Totais</p>
+                                <p className="text-lg font-bold text-blue-600">
+                                  R$ {metrics.investmentsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="py-4">
+                              <Button
+                                onClick={() => handleConnectBank(metrics.connectorId || null)}
+                                className="w-full"
+                                size="lg"
+                                disabled={isWidgetOpen}
+                              >
+                                Conectar
+                              </Button>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
             </TabsContent>
 
             {/* Aba Cartões */}
