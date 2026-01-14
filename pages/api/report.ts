@@ -32,7 +32,9 @@ export default async function handler(
     categoryBalances.push({ category, balance });
   }
 
-  const startDate = sortBy(transactions, ['date'])[0].date;
+  const startDate = transactions && transactions.length > 0 
+    ? sortBy(transactions, ['date'])[0].date 
+    : null;
 
   res.status(200).json({
     categoryBalances: sortBy(categoryBalances, ['balance']),
