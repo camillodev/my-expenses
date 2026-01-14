@@ -245,12 +245,15 @@ export default function Home() {
   // Calcular limite disponível (limite de crédito - fatura atual)
   const availableLimit = creditCards
     .reduce((sum, acc) => {
-      // Assumindo que o balance negativo é a fatura e precisamos calcular o limite disponível
-      // Se não houver limite explícito, usamos um valor padrão ou calculamos baseado no saldo
-      const balance = acc.balance || 0
-      // Para cartões, o balance negativo indica fatura atual
-      // Vamos assumir um limite padrão ou usar um cálculo baseado nos dados disponíveis
-      return sum + Math.max(0, 10000 + balance) // Exemplo: limite de 10k - fatura
+      const currentInvoice = Math.abs(acc.balance || 0);
+      // Use availableCredit if available, otherwise calculate from creditLimit
+      if (acc.availableCredit !== undefined && acc.availableCredit !== null) {
+        return sum + Math.max(0, acc.availableCredit);
+      } else if (acc.creditLimit !== undefined && acc.creditLimit !== null) {
+        return sum + Math.max(0, acc.creditLimit - currentInvoice);
+      }
+      // Fallback: if no limit data, return 0 (don't guess)
+      return sum;
     }, 0)
 
   // Filtrar contas por tipo
@@ -262,11 +265,19 @@ export default function Home() {
       return accounts.filter(acc => acc.type === type)
     }
     // Retornar contas bancárias e investimentos, excluindo cartões de crédito e empréstimos
-    return accounts.filter(acc => 
-      acc.subtype !== 'credit_card' && 
-      acc.type !== 'credit' && 
-      acc.type !== 'loan'
-    )
+    const filtered = accounts.filter(acc => {
+      const result = acc.subtype !== 'credit_card' && 
+        acc.type !== 'credit' && 
+        acc.type !== 'loan'
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:265',message:'Filtering account in getAccountsByType',data:{accountId:acc.id,type:acc.type,subtype:acc.subtype,isCreditCard:acc.subtype==='credit_card',isCredit:acc.type==='credit',isLoan:acc.type==='loan',included:result},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      return result
+    })
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:270',message:'getAccountsByType result',data:{totalAccounts:accounts.length,filteredCount:filtered.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    return filtered
   }
 
   // Obter contas de investimento
@@ -298,6 +309,10 @@ export default function Home() {
 
   // Obter label amigável do tipo de conta
   const getAccountTypeLabel = (account: Account): string => {
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:300',message:'getAccountTypeLabel called',data:{accountId:account.id,type:account.type,subtype:account.subtype},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
     // Cartão de crédito
     if (account.subtype === 'credit_card') {
       return 'Cartão de Crédito'
@@ -319,7 +334,11 @@ export default function Home() {
       return 'Conta Bancária'
     }
     // Fallback: usar o tipo/subtype original
-    return account.subtype || account.type || 'Conta'
+    const label = account.subtype || account.type || 'Conta'
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:323',message:'getAccountTypeLabel result',data:{accountId:account.id,label},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    return label
   }
 
   // Obter ícone baseado no tipo de conta
@@ -548,128 +567,249 @@ export default function Home() {
             {/* Aba Contas */}
             <TabsContent value="accounts" className="space-y-6">
               {loading ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {Array.from({ length: 3 }).map((_, index) => (
+                <div className="space-y-6">
+                  {Array.from({ length: 2 }).map((_, index) => (
                     <Card key={index}>
                       <CardHeader>
-                        <Skeleton className="h-6 w-32 mb-2" />
-                        <Skeleton className="h-4 w-24" />
+                        <Skeleton className="h-6 w-48 mb-4" />
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-2">
-                          <Skeleton className="h-4 w-16" />
-                          <Skeleton className="h-8 w-32" />
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <Skeleton key={i} className="h-32" />
+                          ))}
                         </div>
                       </CardContent>
                     </Card>
                   ))}
                 </div>
               ) : (() => {
-                const bankAccounts = getAccountsByType().filter(acc => 
-                  getAccountTypeLabel(acc) === 'Conta Bancária'
-                )
-                const investmentAccounts = getInvestmentAccounts()
-                const allAccounts = getAccountsByType()
-                
-                if (allAccounts.length === 0 && investmentAccounts.length === 0) {
+                // Group accounts by bank (itemId)
+                const accountsByBank = new Map<string, Account[]>();
+                accounts.forEach(acc => {
+                  const bankAccounts = accountsByBank.get(acc.itemId) || [];
+                  bankAccounts.push(acc);
+                  accountsByBank.set(acc.itemId, bankAccounts);
+                });
+
+                // Get connected banks
+                const connectedBanks = banks.map(bank => {
+                  const bankAccounts = accountsByBank.get(bank.itemId) || [];
+                  const bankingAccounts = bankAccounts.filter(acc => 
+                    acc.subtype === 'checking' || acc.subtype === 'savings' || 
+                    (acc.type === 'bank' && acc.subtype !== 'credit_card')
+                  );
+                  const creditCardAccounts = bankAccounts.filter(acc => 
+                    acc.subtype === 'credit_card' || acc.type === 'credit'
+                  );
+                  const investmentAccounts = bankAccounts.filter(acc => 
+                    acc.type === 'investment' || 
+                    acc.subtype === 'investment' ||
+                    acc.subtype === 'brokerage' ||
+                    acc.subtype === 'mutual_fund'
+                  );
+                  const totalInvestments = investmentAccounts.reduce((sum, acc) => 
+                    sum + (acc.balance || 0), 0
+                  );
+
+                  return {
+                    ...bank,
+                    bankingAccounts,
+                    creditCardAccounts,
+                    investmentAccounts,
+                    totalInvestments
+                  };
+                });
+
+                // Get available banks (not connected)
+                const availableBanks = bankConnectors.filter(connector => !connector.isConnected);
+
+                if (connectedBanks.length === 0 && availableBanks.length === 0) {
                   return (
                     <Card>
                       <CardContent className="py-8 text-center text-muted-foreground">
-                        Nenhuma conta encontrada
+                        Nenhum banco encontrado. Conecte um banco para começar.
                       </CardContent>
                     </Card>
-                  )
+                  );
                 }
 
                 return (
-                  <div className="space-y-6">
-                    {/* Seção: Contas Bancárias */}
-                    {bankAccounts.length > 0 && (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-5 w-5 text-slate-600" />
-                          <h3 className="text-lg font-semibold text-slate-900">Contas Bancárias</h3>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                          {bankAccounts.map((account) => {
-                            const AccountIcon = getAccountIcon(account)
-                            const typeLabel = getAccountTypeLabel(account)
-                            const badgeColor = getAccountTypeBadgeColor(account)
-                            return (
-                              <Card key={account.id}>
-                                <CardHeader>
-                                  <div className="flex items-center justify-between">
-                                    <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                                    <AccountIcon className="h-5 w-5 text-slate-400" />
+                  <div className="space-y-8">
+                    {/* Connected Banks */}
+                    {connectedBanks.length > 0 && (
+                      <div className="space-y-6">
+                        <h2 className="text-2xl font-bold text-slate-900">Bancos Conectados</h2>
+                        {connectedBanks.map((bank) => (
+                          <Card key={bank.itemId} className="border-2">
+                            <CardHeader>
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-xl">{bank.bankName}</CardTitle>
+                                <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                                  bank.status === 'UPDATED' 
+                                    ? 'bg-green-100 text-green-700' 
+                                    : 'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                  {bank.status === 'UPDATED' ? 'Conectado' : bank.status}
+                                </span>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="space-y-6">
+                              {/* Banking Accounts Section */}
+                              {bank.bankingAccounts.length > 0 && (
+                                <div className="space-y-3">
+                                  <div className="flex items-center gap-2">
+                                    <Building2 className="h-5 w-5 text-slate-600" />
+                                    <h3 className="text-lg font-semibold text-slate-900">Contas Bancárias</h3>
                                   </div>
-                                  <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
-                                  <div className="mt-2">
-                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
-                                      {typeLabel}
-                                    </span>
+                                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                    {bank.bankingAccounts.map((account) => {
+                                      const AccountIcon = getAccountIcon(account);
+                                      const typeLabel = getAccountTypeLabel(account);
+                                      const badgeColor = getAccountTypeBadgeColor(account);
+                                      return (
+                                        <Card key={account.id} className="border">
+                                          <CardHeader className="pb-3">
+                                            <div className="flex items-center justify-between">
+                                              <CardTitle className="text-base">{account.name || 'Conta'}</CardTitle>
+                                              <AccountIcon className="h-4 w-4 text-slate-400" />
+                                            </div>
+                                            <CardDescription className="text-xs">•••• {getLastFourDigits(account)}</CardDescription>
+                                            <div className="mt-1">
+                                              <span className={`px-2 py-0.5 text-xs font-semibold rounded-full border ${badgeColor}`}>
+                                                {typeLabel}
+                                              </span>
+                                            </div>
+                                          </CardHeader>
+                                          <CardContent>
+                                            <p className={`text-xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                              {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                                            </p>
+                                          </CardContent>
+                                        </Card>
+                                      );
+                                    })}
                                   </div>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="space-y-2">
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Saldo</p>
-                                      <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                                </div>
+                              )}
+
+                              {/* Credit Cards Section */}
+                              {bank.creditCardAccounts.length > 0 && (
+                                <div className="space-y-3 border-t pt-4">
+                                  <div className="flex items-center gap-2">
+                                    <CreditCard className="h-5 w-5 text-purple-600" />
+                                    <h3 className="text-lg font-semibold text-slate-900">Cartões de Crédito</h3>
+                                  </div>
+                                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                    {bank.creditCardAccounts.map((account) => {
+                                      const currentInvoice = Math.abs(account.balance || 0);
+                                      const creditLimit = account.creditLimit || 0;
+                                      const availableCredit = account.availableCredit || 
+                                        (creditLimit > 0 ? creditLimit - currentInvoice : 0);
+                                      return (
+                                        <Card key={account.id} className="border">
+                                          <CardHeader className="pb-3">
+                                            <div className="flex items-center justify-between">
+                                              <CardTitle className="text-base">{account.name || 'Cartão'}</CardTitle>
+                                              <CreditCard className="h-4 w-4 text-purple-500" />
+                                            </div>
+                                            <CardDescription className="text-xs">•••• {getLastFourDigits(account)}</CardDescription>
+                                          </CardHeader>
+                                          <CardContent className="space-y-2">
+                                            <div>
+                                              <p className="text-xs text-muted-foreground">Fatura Atual</p>
+                                              <p className="text-lg font-bold text-red-600">
+                                                {account.currencyCode || 'R$'} {currentInvoice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                              </p>
+                                            </div>
+                                            {creditLimit > 0 && (
+                                              <div className="pt-2 border-t">
+                                                <p className="text-xs text-muted-foreground">Limite</p>
+                                                <p className="text-sm font-semibold text-slate-700">
+                                                  {account.currencyCode || 'R$'} {creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </p>
+                                              </div>
+                                            )}
+                                            {availableCredit > 0 && (
+                                              <div>
+                                                <p className="text-xs text-muted-foreground">Disponível</p>
+                                                <p className="text-sm font-semibold text-green-600">
+                                                  {account.currencyCode || 'R$'} {availableCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </CardContent>
+                                        </Card>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Investments Section */}
+                              {bank.investmentAccounts.length > 0 && (
+                                <div className="space-y-3 border-t pt-4">
+                                  <div className="flex items-center gap-2">
+                                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                                    <h3 className="text-lg font-semibold text-slate-900">Investimentos</h3>
+                                  </div>
+                                  <Card className="bg-blue-50 border-blue-200">
+                                    <CardContent className="py-4">
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <p className="text-sm text-muted-foreground">Total em Investimentos</p>
+                                          <p className="text-2xl font-bold text-blue-600">
+                                            {bank.investmentAccounts[0]?.currencyCode || 'R$'} {bank.totalInvestments.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          </p>
+                                        </div>
+                                        <TrendingUp className="h-8 w-8 text-blue-500" />
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-2">
+                                        {bank.investmentAccounts.length} {bank.investmentAccounts.length === 1 ? 'conta' : 'contas'} de investimento
                                       </p>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            )
-                          })}
-                        </div>
+                                    </CardContent>
+                                  </Card>
+                                </div>
+                              )}
+
+                              {bank.bankingAccounts.length === 0 && bank.creditCardAccounts.length === 0 && bank.investmentAccounts.length === 0 && (
+                                <p className="text-sm text-muted-foreground text-center py-4">
+                                  Nenhuma conta encontrada para este banco
+                                </p>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
                       </div>
                     )}
 
-                    {/* Seção: Investimentos */}
-                    {investmentAccounts.length > 0 && (
-                      <div className="space-y-4">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-5 w-5 text-blue-600" />
-                          <h3 className="text-lg font-semibold text-slate-900">Investimentos</h3>
-                        </div>
+                    {/* Available Banks (Not Connected) */}
+                    {availableBanks.length > 0 && (
+                      <div className="space-y-6">
+                        <h2 className="text-2xl font-bold text-slate-900">Bancos Disponíveis</h2>
                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                          {investmentAccounts.map((account) => {
-                            const AccountIcon = getAccountIcon(account)
-                            const typeLabel = getAccountTypeLabel(account)
-                            const badgeColor = getAccountTypeBadgeColor(account)
-                            return (
-                              <Card key={account.id}>
-                                <CardHeader>
-                                  <div className="flex items-center justify-between">
-                                    <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                                    <AccountIcon className="h-5 w-5 text-blue-500" />
-                                  </div>
-                                  <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
-                                  <div className="mt-2">
-                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
-                                      {typeLabel}
-                                    </span>
-                                  </div>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="space-y-2">
-                                    <div>
-                                      <p className="text-sm text-muted-foreground">Saldo</p>
-                                      <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                            )
-                          })}
+                          {availableBanks.map((connector) => (
+                            <Card key={connector.name} className="border-2 border-dashed">
+                              <CardHeader>
+                                <CardTitle className="text-lg">{connector.name}</CardTitle>
+                                <CardDescription>Não conectado</CardDescription>
+                              </CardHeader>
+                              <CardContent>
+                                <Button
+                                  onClick={() => handleConnectBank(connector.connectorId || null)}
+                                  className="w-full"
+                                  size="lg"
+                                >
+                                  Conectar
+                                </Button>
+                              </CardContent>
+                            </Card>
+                          ))}
                         </div>
                       </div>
                     )}
                   </div>
-                )
+                );
               })()}
             </TabsContent>
 

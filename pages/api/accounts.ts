@@ -56,6 +56,27 @@ export default async function handler(
         (accounts || []).map(async (account) => {
           try {
             const accountDetails = await client.fetchAccount(account.id);
+            
+            // Debug: Log full account structure for first account of each type
+            const typeKey = `${accountDetails.type || 'unknown'}_${accountDetails.subtype || 'unknown'}`;
+            if (!(global as any).__debugAccountTypes) {
+              (global as any).__debugAccountTypes = new Set();
+            }
+            if (!(global as any).__debugAccountTypes.has(typeKey)) {
+              (global as any).__debugAccountTypes.add(typeKey);
+              console.log(`[DEBUG] Account ${typeKey} full structure:`, JSON.stringify(accountDetails, null, 2));
+            }
+            
+            // Extract credit card specific fields
+            const creditLimit = (accountDetails as any).creditLimit || 
+                               (accountDetails as any).creditData?.limit || 
+                               (accountDetails as any).limit || 
+                               null;
+            const availableCredit = (accountDetails as any).availableCredit || 
+                                   (accountDetails as any).creditData?.availableCredit || 
+                                   (accountDetails as any).available || 
+                                   null;
+
             return {
               ...account,
               name: accountDetails.name,
@@ -63,6 +84,10 @@ export default async function handler(
               subtype: accountDetails.subtype,
               balance: accountDetails.balance,
               currencyCode: accountDetails.currencyCode,
+              creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : undefined,
+              availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : undefined,
+              // Include all fields for debugging (will be filtered later)
+              _debugFullAccount: accountDetails
             };
           } catch (err) {
             console.error(`Error fetching account ${account.id}:`, err);
@@ -96,6 +121,27 @@ export default async function handler(
         accountsToProcess.map(async (account) => {
           try {
             const accountDetails = await client.fetchAccount(account.id);
+            
+            // Debug: Log full account structure for first account of each type
+            const typeKey = `${accountDetails.type || 'unknown'}_${accountDetails.subtype || 'unknown'}`;
+            if (!(global as any).__debugAccountTypes) {
+              (global as any).__debugAccountTypes = new Set();
+            }
+            if (!(global as any).__debugAccountTypes.has(typeKey)) {
+              (global as any).__debugAccountTypes.add(typeKey);
+              console.log(`[DEBUG] Account ${typeKey} full structure:`, JSON.stringify(accountDetails, null, 2));
+            }
+            
+            // Extract credit card specific fields
+            const creditLimit = (accountDetails as any).creditLimit || 
+                               (accountDetails as any).creditData?.limit || 
+                               (accountDetails as any).limit || 
+                               null;
+            const availableCredit = (accountDetails as any).availableCredit || 
+                                   (accountDetails as any).creditData?.availableCredit || 
+                                   (accountDetails as any).available || 
+                                   null;
+
             return {
               ...account,
               name: accountDetails.name,
@@ -103,6 +149,10 @@ export default async function handler(
               subtype: accountDetails.subtype,
               balance: accountDetails.balance,
               currencyCode: accountDetails.currencyCode,
+              creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : undefined,
+              availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : undefined,
+              // Include all fields for debugging (will be filtered later)
+              _debugFullAccount: accountDetails
             };
           } catch (err) {
             console.error(`Error fetching account ${account.id}:`, err);

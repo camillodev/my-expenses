@@ -49,18 +49,57 @@ export default async function handler(
     let accountsSaved = 0;
     let transactionsSaved = 0;
     
+    // Debug: Log first account of each type to inspect structure
+    const accountTypesSeen = new Set<string>();
+    const debugAccounts: any[] = [];
+    
     for (const account of accounts.results) {
       try {
+        // Fetch full account details for debugging and saving
+        const accountDetails = await client.fetchAccount(account.id);
+        
+        // Debug: Log first account of each type/subtype combination
+        const typeKey = `${accountDetails.type || 'unknown'}_${accountDetails.subtype || 'unknown'}`;
+        if (!accountTypesSeen.has(typeKey)) {
+          accountTypesSeen.add(typeKey);
+          console.log(`[DEBUG] First ${typeKey} account structure:`, JSON.stringify(accountDetails, null, 2));
+          debugAccounts.push({
+            type: accountDetails.type,
+            subtype: accountDetails.subtype,
+            fullAccount: accountDetails
+          });
+        }
+        
         const accountTransactions = await client.fetchAllTransactions(account.id);
         transactions.push(...accountTransactions);
 
-        // Salvar/atualizar conta no Supabase
+        // Extract credit card specific fields (check multiple possible field names)
+        const creditLimit = (accountDetails as any).creditLimit || 
+                           (accountDetails as any).creditData?.limit || 
+                           (accountDetails as any).limit || 
+                           null;
+        const availableCredit = (accountDetails as any).availableCredit || 
+                               (accountDetails as any).creditData?.availableCredit || 
+                               (accountDetails as any).available || 
+                               null;
+
+        // Prepare account data for Supabase
+        const accountDataToSave: any = {
+          id: account.id,
+          itemId: account.itemId,
+          name: accountDetails.name || null,
+          type: accountDetails.type || null,
+          subtype: accountDetails.subtype || null,
+          balance: accountDetails.balance !== undefined ? accountDetails.balance : null,
+          currencyCode: accountDetails.currencyCode || null,
+          creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : null,
+          availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : null,
+        };
+
+        // Salvar/atualizar conta no Supabase com todos os campos
         const { error: accountError, data: accountData } = await supabase
           .from('accounts')
-          .upsert({ 
-            id: account.id, 
-            itemId: account.itemId 
-          }, {
+          .upsert(accountDataToSave, {
             onConflict: 'id'
           })
           .select();
@@ -125,7 +164,8 @@ export default async function handler(
       accountsSaved,
       transactionsProcessed: transactions.length,
       transactionsSaved,
-      errors: errors.length > 0 ? errors : undefined
+      errors: errors.length > 0 ? errors : undefined,
+      debug: debugAccounts // Include debug info in response for inspection
     });
   } catch (error: any) {
     console.error('Error syncing item:', error);

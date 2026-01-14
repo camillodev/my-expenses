@@ -8,6 +8,9 @@ export interface Account {
   subtype?: string;
   balance?: number;
   currencyCode?: string;
+  creditLimit?: number;      // For credit cards - total credit limit
+  availableCredit?: number;   // For credit cards - available credit
+  currentInvoice?: number;     // For credit cards - current invoice amount (if separate from balance)
 }
 
 export interface Transaction {
