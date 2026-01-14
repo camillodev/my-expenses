@@ -9,11 +9,11 @@ interface SidebarProps {
 
 export function Sidebar({ onConnectBank, onCopyCpf, isWidgetOpen }: SidebarProps) {
   return (
-    <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 bg-slate-900 text-slate-50 border-r border-slate-800 flex-col z-50">
+    <aside className="hidden lg:flex fixed left-0 top-0 h-screen w-64 bg-card text-foreground border-r border-border flex-col z-50">
       {/* Header */}
-      <div className="p-6 border-b border-slate-800">
+      <div className="p-6 border-b border-border">
         <div className="flex items-center gap-3">
-          <Wallet className="h-6 w-6 text-slate-300" />
+          <Wallet className="h-6 w-6 text-primary" fill="currentColor" />
           <h1 className="text-xl font-semibold">Pluggy Expenses</h1>
         </div>
       </div>
@@ -24,13 +24,13 @@ export function Sidebar({ onConnectBank, onCopyCpf, isWidgetOpen }: SidebarProps
       </nav>
 
       {/* Actions */}
-      <div className="p-4 border-t border-slate-800 space-y-3">
+      <div className="p-4 border-t border-border space-y-3">
         {onCopyCpf && (
           <Button
             variant="outline"
             size="sm"
             onClick={onCopyCpf}
-            className="w-full bg-slate-800 border-slate-700 text-slate-100 hover:bg-slate-700"
+            className="w-full"
           >
             Copiar CPF
           </Button>
@@ -40,7 +40,7 @@ export function Sidebar({ onConnectBank, onCopyCpf, isWidgetOpen }: SidebarProps
             size="lg"
             onClick={onConnectBank}
             disabled={isWidgetOpen}
-            className="w-full bg-slate-700 hover:bg-slate-600 text-white"
+            className="w-full"
           >
             Conectar Bancos
           </Button>

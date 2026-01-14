@@ -19,13 +19,13 @@ export function Navbar({ activeTab, onTabChange }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b bg-white shadow-sm">
+    <nav className="sticky top-0 z-40 w-full border-b bg-card shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <Wallet className="h-6 w-6 text-slate-700" />
-            <span className="text-lg font-semibold text-slate-900">Pluggy Expenses</span>
+            <Wallet className="h-6 w-6 text-primary" fill="currentColor" />
+            <span className="text-lg font-semibold text-foreground">Pluggy Expenses</span>
           </div>
 
           {/* Desktop Navigation */}
@@ -39,8 +39,8 @@ export function Navbar({ activeTab, onTabChange }: NavbarProps) {
                 }}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                   activeTab === item.id
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-700 hover:bg-slate-100'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-foreground hover:bg-accent hover:text-accent-foreground'
                 }`}
               >
                 {item.label}
@@ -56,9 +56,9 @@ export function Navbar({ activeTab, onTabChange }: NavbarProps) {
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           >
             {mobileMenuOpen ? (
-              <X className="h-5 w-5" />
+              <X className="h-5 w-5" fill="currentColor" />
             ) : (
-              <Menu className="h-5 w-5" />
+              <Menu className="h-5 w-5" fill="currentColor" />
             )}
           </Button>
         </div>
@@ -76,8 +76,8 @@ export function Navbar({ activeTab, onTabChange }: NavbarProps) {
                   }}
                   className={`w-full text-left px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     activeTab === item.id
-                      ? 'bg-slate-900 text-white'
-                      : 'text-slate-700 hover:bg-slate-100'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
                   }`}
                 >
                   {item.label}

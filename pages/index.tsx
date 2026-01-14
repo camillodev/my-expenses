@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu, PiggyBank, TrendingDown } from 'lucide-react';
+import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu, PiggyBank, TrendingDown, RefreshCw } from 'lucide-react';
 import { useFinancialData, type Account, type Transaction } from '@/hooks/useFinancialData';
 import { Navbar } from '@/components/Navbar';
 import { TARGET_BANKS, findTargetBank, matchesTargetBank } from '@/lib/banks-config';
@@ -397,16 +397,16 @@ export default function Home() {
   // Obter cor do badge baseado no tipo
   const getAccountTypeBadgeColor = (account: Account): string => {
     if (isCreditCardSubtype(account.subtype)) {
-      return 'bg-purple-100 text-purple-700 border-purple-200';
+      return 'bg-primary/20 text-primary border-primary/30';
     }
     const normalizedSubtype = normalizeAccountSubtype(account.subtype);
     if (account.type === 'investment' || normalizedSubtype === 'investment') {
-      return 'bg-blue-100 text-blue-700 border-blue-200';
+      return 'bg-primary/20 text-primary border-primary/30';
     }
     if (account.type === 'loan') {
-      return 'bg-red-100 text-red-700 border-red-200';
+      return 'bg-destructive/20 text-destructive border-destructive/30';
     }
-    return 'bg-green-100 text-green-700 border-green-200';
+    return 'bg-primary/20 text-primary border-primary/30';
   }
 
   // TARGET_BANKS agora vem de lib/banks-config.ts
@@ -565,10 +565,9 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
+    <div className="flex flex-col h-screen bg-background">
       <Head>
         <title>Pluggy My Expenses</title>
-        <link rel="stylesheet" href="https://maxst.icons8.com/vue-static/landings/line-awesome/line-awesome/1.3.0/css/line-awesome.min.css"></link>
       </Head>
 
       <Navbar activeTab={activeTab} onTabChange={(tab) => {
@@ -595,7 +594,7 @@ export default function Home() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Saldo Total</CardTitle>
-                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    <DollarSign className="h-4 w-4 text-muted-foreground" fill="currentColor" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
@@ -610,7 +609,7 @@ export default function Home() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Limite Disponível</CardTitle>
-                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" fill="currentColor" />
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold">
@@ -693,11 +692,11 @@ export default function Home() {
                                 </TableCell>
                                 <TableCell>{transaction.description || 'Sem descrição'}</TableCell>
                                 <TableCell>
-                                  <span className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700">
+                                  <span className="px-2 py-1 text-xs rounded-full bg-muted text-muted-foreground">
                                     {transaction.category || 'Outros'}
                                   </span>
                                 </TableCell>
-                                <TableCell className={transaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}>
+                                <TableCell className={transaction.amount >= 0 ? 'text-primary' : 'text-destructive'}>
                                   <strong>
                                     {transaction.amount >= 0 ? '+' : ''}
                                     R$ {Math.abs(transaction.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -728,7 +727,7 @@ export default function Home() {
             <TabsContent value="banks" className="space-y-6">
               <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold text-slate-900">Contas</h2>
+                  <h2 className="text-2xl font-bold text-foreground">Contas</h2>
                   <p className="text-sm text-muted-foreground mt-1">Visualize suas contas por banco</p>
                 </div>
                 <div className="flex gap-2">
@@ -738,7 +737,7 @@ export default function Home() {
                     onClick={copyCpf}
                     className="flex items-center gap-2"
                   >
-                    <FileText className="h-4 w-4" />
+                    <FileText className="h-4 w-4" fill="currentColor" />
                     Copiar CPF
                   </Button>
                   <Button
@@ -747,7 +746,7 @@ export default function Home() {
                     disabled={isWidgetOpen}
                     className="flex items-center gap-2"
                   >
-                    <Building2 className="h-4 w-4" />
+                    <Building2 className="h-4 w-4" fill="currentColor" />
                     Conectar Bancos
                   </Button>
                 </div>
@@ -791,7 +790,7 @@ export default function Home() {
                           <div className="flex items-center justify-between">
                             <CardTitle className="text-xl">{targetBank.name}</CardTitle>
                             {metrics.isConnected && (
-                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-primary/20 text-primary border border-primary/30">
                                 Conectado
                               </span>
                             )}
@@ -802,25 +801,25 @@ export default function Home() {
                             <>
                               <div>
                                 <p className="text-xs text-muted-foreground mb-1">Conta Corrente</p>
-                                <p className={`text-lg font-bold ${metrics.checkingBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                <p className={`text-lg font-bold ${metrics.checkingBalance >= 0 ? 'text-primary' : 'text-destructive'}`}>
                                   R$ {metrics.checkingBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-xs text-muted-foreground mb-1">Fatura do Cartão</p>
-                                <p className="text-lg font-bold text-red-600">
+                                <p className="text-lg font-bold text-destructive">
                                   R$ {metrics.creditCardBill.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-xs text-muted-foreground mb-1">Limite Disponível</p>
-                                <p className="text-lg font-bold text-green-600">
+                                <p className="text-lg font-bold text-primary">
                                   R$ {metrics.availableLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                               </div>
                               <div>
                                 <p className="text-xs text-muted-foreground mb-1">Investimentos Totais</p>
-                                <p className="text-lg font-bold text-blue-600">
+                                <p className="text-lg font-bold text-primary">
                                   R$ {metrics.investmentsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
                               </div>
@@ -853,6 +852,7 @@ export default function Home() {
                                   }}
                                   disabled={loading}
                                 >
+                                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} fill="currentColor" />
                                   {loading ? 'Atualizando...' : 'Atualizar Dados'}
                                 </Button>
                               </div>
@@ -909,11 +909,11 @@ export default function Home() {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                          <CreditCard className="h-5 w-5 text-purple-500" />
+                          <CreditCard className="h-5 w-5 text-primary" fill="currentColor" />
                         </div>
                         <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
                         <div className="mt-2">
-                          <span className="px-3 py-1 text-xs font-semibold rounded-full border bg-purple-100 text-purple-700 border-purple-200">
+                          <span className="px-3 py-1 text-xs font-semibold rounded-full border bg-primary/20 text-primary border-primary/30">
                             Cartão de Crédito
                           </span>
                         </div>
@@ -922,14 +922,14 @@ export default function Home() {
                         <div className="space-y-2">
                           <div>
                             <p className="text-sm text-muted-foreground">Fatura Atual</p>
-                            <p className="text-2xl font-bold text-red-600">
+                            <p className="text-2xl font-bold text-destructive">
                               {account.currencyCode || 'R$'} {(account.currentInvoice || Math.abs(account.balance || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                           </div>
                           {account.creditLimit !== undefined && account.creditLimit !== null && (
                             <div>
                               <p className="text-xs text-muted-foreground">Limite Total</p>
-                              <p className="text-sm font-semibold text-slate-600">
+                              <p className="text-sm font-semibold text-muted-foreground">
                                 R$ {account.creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                             </div>
@@ -937,7 +937,7 @@ export default function Home() {
                           {account.availableCredit !== undefined && account.availableCredit !== null && (
                             <div>
                               <p className="text-xs text-muted-foreground">Limite Disponível</p>
-                              <p className="text-sm font-semibold text-green-600">
+                              <p className="text-sm font-semibold text-primary">
                                 R$ {account.availableCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </p>
                             </div>
@@ -982,7 +982,7 @@ export default function Home() {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                          <FileText className="h-5 w-5 text-slate-400" />
+                          <FileText className="h-5 w-5 text-muted-foreground" fill="currentColor" />
                         </div>
                         <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
                       </CardHeader>
@@ -990,7 +990,7 @@ export default function Home() {
                         <div className="space-y-2">
                           <div>
                             <p className="text-sm text-muted-foreground">Saldo Devedor</p>
-                            <p className="text-2xl font-bold text-red-600">
+                            <p className="text-2xl font-bold text-destructive">
                               {account.currencyCode || 'R$'} {Math.abs(account.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                           </div>
@@ -1021,7 +1021,7 @@ export default function Home() {
       {/* Widget de Conexão */}
       {isWidgetOpen && connectToken && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+          <div className="bg-card rounded-lg p-6 max-w-2xl w-full mx-4 border border-border">
             <PluggyConnect
               updateItem={itemIdToUpdate}
               connectToken={connectToken}
@@ -1048,7 +1048,7 @@ export default function Home() {
         pauseOnFocusLoss
         draggable
         pauseOnHover
-        theme="light"
+        theme="dark"
       />
     </div>
   )
