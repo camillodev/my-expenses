@@ -29,6 +29,14 @@ interface Account {
   currencyCode?: string;
 }
 
+interface BankConnector {
+  name: string;
+  connectorId: number | null;
+  connectorName?: string;
+  isConnected: boolean;
+  status: string | null;
+}
+
 export default function Home() {
 
   const [connectToken, setConnectToken] = useState<string>('')
@@ -37,26 +45,20 @@ export default function Home() {
   const [isWidgetOpen, setIsWidgetOpen] = useState<boolean>(false)
   const [categoryBalances, setCategoryBalances] = useState<{category: string, balance: number}[] | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
+  const [bankConnectors, setBankConnectors] = useState<BankConnector[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState<boolean>(true)
-
-  useEffect(() => {
-    if (!connectToken) {
-      const fetchToken = async () => {
-        const response = await fetch('/api/connect-token')
-        const { accessToken } = await response.json()
-        setConnectToken(accessToken)
-      }
-
-      fetchToken()
-    }
-  })
 
   useEffect(() => {
     const loadData = async () => {
       try {
         setLoading(true)
-        // Carregar bancos conectados
+        // Carregar lista de bancos disponíveis
+        const connectorsResponse = await fetch('/api/connectors')
+        const connectorsData = await connectorsResponse.json()
+        setBankConnectors(connectorsData.banks || [])
+
+        // Carregar bancos conectados (para histórico)
         const banksResponse = await fetch('/api/banks')
         const banksData = await banksResponse.json()
         setBanks(banksData.banks || [])
@@ -84,30 +86,46 @@ export default function Home() {
     }
   }
 
+  const handleConnectBank = async () => {
+    try {
+      const tokenResponse = await fetch('/api/connect-token')
+      const { accessToken } = await tokenResponse.json()
+      setConnectToken(accessToken)
+      setIsWidgetOpen(true)
+    } catch (error) {
+      console.error('Error generating connect token:', error)
+      toast.error('Erro ao iniciar conexão')
+    }
+  }
+
+  const onError = (error: any) => {
+    console.error('Pluggy Connect error:', error)
+    setIsWidgetOpen(false)
+    setConnectToken('')
+    toast.error('Erro ao conectar. Tente novamente.')
+  }
+
   const onSuccess = async (itemData: { item: any; }) => {
     setIsWidgetOpen(false)
+    setConnectToken('')
     toast.info('Sincronizando dados do banco...', { autoClose: 2000 })
     
     try {
-      // Primeiro, sincronizar dados do item recém-conectado
-      const syncResponse = await fetch('/api/items', {
+      // Sincronizar dados do item recém-conectado
+      await fetch('/api/items', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ itemId: itemData.item.id }),
       })
-
-      if (!syncResponse.ok) {
-        throw new Error('Erro ao sincronizar dados')
-      }
-
-      toast.success('Dados sincronizados com sucesso!', { autoClose: 3000 })
 
       // Aguardar um pouco para garantir que os dados foram salvos
       await new Promise(resolve => setTimeout(resolve, 1000))
 
       // Recarregar dados
+      const connectorsResponse = await fetch('/api/connectors')
+      const connectorsData = await connectorsResponse.json()
+      setBankConnectors(connectorsData.banks || [])
+
       const banksResponse = await fetch('/api/banks')
       const banksData = await banksResponse.json()
       setBanks(banksData.banks || [])
@@ -127,6 +145,7 @@ export default function Home() {
       }
 
       setItemIdToUpdate(itemData.item.id)
+      toast.success('Dados sincronizados com sucesso!', { autoClose: 3000 })
     } catch (error: any) {
       console.error('Error syncing data:', error)
       toast.error('Erro ao sincronizar dados. Tente atualizar a página.', { autoClose: 5000 })
@@ -151,74 +170,49 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Informações sobre Dados Acessíveis */}
+          {/* Lista de Bancos */}
           <div className="row mb-4">
             <div className="col-12">
-              <div className="alert alert-info">
-                <h5 className="alert-heading">
-                  <i className="las la-info-circle"></i> Dados que você terá acesso:
-                </h5>
-                <ul className="mb-0">
-                  <li><strong>Contas bancárias:</strong> Saldo atual, tipo de conta, número da conta</li>
-                  <li><strong>Transações:</strong> Histórico completo de movimentações financeiras</li>
-                  <li><strong>Categorização:</strong> Transações organizadas por categoria (alimentação, transporte, etc.)</li>
-                  <li><strong>Relatórios:</strong> Análise de gastos por categoria e período</li>
-                </ul>
-                <hr />
-                <p className="mb-0">
-                  <small>
-                    <i className="las la-shield-alt"></i> Seus dados são protegidos e criptografados. 
-                    Utilizamos a API do Pluggy, que segue os mais altos padrões de segurança financeira.
-                  </small>
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Bancos Conectados */}
-          <div className="row mb-4">
-            <div className="col-12">
-              <h3 className="mb-3">Bancos Conectados</h3>
+              <h3 className="mb-3">Conectar Bancos</h3>
               <button className="btn btn-primary btn-lg mb-3" onClick={copyCpf}>
                 <i className="las la-copy"></i> Copiar CPF
               </button>
               {loading ? (
                 <p>Carregando...</p>
-              ) : banks.length === 0 ? (
-                <div className="alert alert-info">
-                  <i className="las la-info-circle"></i> Nenhum banco conectado ainda.
-                </div>
               ) : (
-                <div className="table-responsive">
-                  <table className="table table-striped">
-                    <thead>
-                      <tr>
-                        <th>Banco</th>
-                        <th>Status</th>
-                        <th>Conectado em</th>
-                        <th>Última atualização</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {banks.map((bank) => (
-                        <tr key={bank.itemId}>
-                          <td><strong>{bank.bankName}</strong></td>
-                          <td>
-                            <span className={`badge ${
-                              bank.status === 'UPDATED' ? 'bg-success' :
-                              bank.status === 'UPDATING' ? 'bg-warning' :
-                              bank.status === 'LOGIN_ERROR' ? 'bg-danger' :
-                              'bg-secondary'
-                            }`}>
-                              {bank.status}
-                            </span>
-                          </td>
-                          <td>{new Date(bank.createdAt).toLocaleDateString('pt-BR')}</td>
-                          <td>{new Date(bank.lastUpdatedAt).toLocaleDateString('pt-BR')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="row">
+                  {bankConnectors.map((bank) => (
+                    <div key={bank.name} className="col-md-6 col-lg-4 mb-3">
+                      <div className="card">
+                        <div className="card-body">
+                          <h5 className="card-title">{bank.name}</h5>
+                          {bank.isConnected ? (
+                            <button
+                              className="btn btn-success w-100"
+                              disabled
+                            >
+                              <i className="las la-check-circle"></i> Conectado
+                            </button>
+                          ) : bank.connectorId ? (
+                            <button
+                              className="btn btn-primary w-100"
+                              onClick={handleConnectBank}
+                              disabled={isWidgetOpen}
+                            >
+                              <i className="las la-link"></i> Conectar
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-secondary w-100"
+                              disabled
+                            >
+                              <i className="las la-exclamation-circle"></i> Indisponível
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -303,31 +297,25 @@ export default function Home() {
             </div>
           )}
 
-          {/* Botão de Conectar */}
-          <div className="row">
-            <div className="col-12 text-center">
-              {isWidgetOpen ? (
+          {/* Widget de Conexão */}
+          {isWidgetOpen && connectToken && (
+            <div className="row">
+              <div className="col-12">
                 <PluggyConnect
                   updateItem={itemIdToUpdate}
                   connectToken={connectToken}
                   includeSandbox={true}
-                  onClose={() => setIsWidgetOpen(false)}
-                  onSuccess={onSuccess}
-                />
-              ) : (
-                <button
-                  className="btn btn-primary btn-lg"
-                  style={{
-                    backgroundColor: '#ef294b',
-                    borderColor: '#ef294b'
+                  onClose={() => {
+                    setIsWidgetOpen(false)
+                    setConnectToken('')
                   }}
-                  onClick={() => setIsWidgetOpen(true)}
-                >
-                  { itemIdToUpdate ? 'Atualizar dados' : 'Conectar banco' }
-                </button>
-              )}
+                  onSuccess={onSuccess}
+                  onError={onError}
+                />
+              </div>
             </div>
-          </div>
+          )}
+
         </div>
       </main>
 

@@ -18,33 +18,30 @@ export default async function handler(
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   try {
-    // Primeiro, buscar itemIds únicos do Supabase
-    const { data: accounts, error } = await supabase
-      .from('accounts')
-      .select('itemId')
-      .order('itemId');
+    // Primeiro, buscar itemIds únicos do Supabase (se a tabela existir)
+    let accounts: any[] = [];
+    if (SUPABASE_URL && SUPABASE_KEY) {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('itemId')
+        .order('itemId');
 
-    if (error) {
-      console.error('Error fetching accounts from Supabase:', error);
+      if (error) {
+        // Tabela pode não existir ainda - isso é ok
+        if (error.code !== 'PGRST205') {
+          console.error('Error fetching accounts from Supabase:', error);
+        }
+      } else {
+        accounts = data || [];
+      }
     }
 
     // Obter itemIds únicos do Supabase
-    const uniqueItemIdsFromSupabase = [...new Set(accounts?.map(acc => acc.itemId) || [])];
+    const itemIdsArray = accounts?.map(acc => acc.itemId).filter(Boolean) || [];
+    const uniqueItemIdsFromSupabase = Array.from(new Set(itemIdsArray));
 
-    // Também buscar todos os items diretamente do Pluggy para garantir que não perdemos nenhum
-    let allItems = [];
-    try {
-      const itemsResponse = await client.fetchItems();
-      allItems = itemsResponse.results || [];
-    } catch (err) {
-      console.error('Error fetching items from Pluggy:', err);
-    }
-
-    // Combinar itemIds do Supabase e do Pluggy
-    const allItemIds = [...new Set([
-      ...uniqueItemIdsFromSupabase,
-      ...allItems.map(item => item.id)
-    ])];
+    // Usar apenas itemIds do Supabase (fetchItems não existe no SDK)
+    const allItemIds = uniqueItemIdsFromSupabase;
 
     // Buscar informações detalhadas dos items
     const banks = await Promise.all(
@@ -58,7 +55,7 @@ export default async function handler(
             bankName: connector.name,
             status: item.status,
             createdAt: item.createdAt,
-            lastUpdatedAt: item.updatedAt,
+            lastUpdatedAt: (item as any).updatedAt || item.createdAt,
           };
         } catch (err) {
           console.error(`Error fetching item ${itemId}:`, err);
