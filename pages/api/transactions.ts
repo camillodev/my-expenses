@@ -24,10 +24,6 @@ export default async function handler(
   try {
     const { itemId, accountId, limit } = req.query;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'transactions.ts:27',message:'Before transactions query',data:{itemId,accountId,limit},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
-
     let query = supabase
       .from('transactions')
       .select('*, accounts!fk_transactions_account(*)')
@@ -49,10 +45,6 @@ export default async function handler(
     }
 
     const { data: transactions, error } = await query;
-
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'transactions.ts:50',message:'After transactions query',data:{hasError:!!error,errorCode:error?.code,errorMessage:error?.message,transactionsCount:transactions?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'G'})}).catch(()=>{});
-    // #endregion
 
     if (error) {
       // Se tabela não existe, retornar array vazio

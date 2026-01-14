@@ -546,7 +546,7 @@ export default function Home() {
             </TabsContent>
 
             {/* Aba Contas */}
-            <TabsContent value="accounts" className="space-y-4">
+            <TabsContent value="accounts" className="space-y-6">
               {loading ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                   {Array.from({ length: 3 }).map((_, index) => (
@@ -564,47 +564,113 @@ export default function Home() {
                     </Card>
                   ))}
                 </div>
-              ) : getAccountsByType().length === 0 ? (
-                <Card>
-                  <CardContent className="py-8 text-center text-muted-foreground">
-                    Nenhuma conta encontrada
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {getAccountsByType().map((account) => {
-                    const AccountIcon = getAccountIcon(account)
-                    const typeLabel = getAccountTypeLabel(account)
-                    const badgeColor = getAccountTypeBadgeColor(account)
-                    return (
-                      <Card key={account.id}>
-                        <CardHeader>
-                          <div className="flex items-center justify-between">
-                            <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                            <AccountIcon className="h-5 w-5 text-slate-400" />
-                          </div>
-                          <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
-                          <div className="mt-2">
-                            <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
-                              {typeLabel}
-                            </span>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Saldo</p>
-                              <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
+              ) : (() => {
+                const bankAccounts = getAccountsByType().filter(acc => 
+                  getAccountTypeLabel(acc) === 'Conta Bancária'
+                )
+                const investmentAccounts = getInvestmentAccounts()
+                const allAccounts = getAccountsByType()
+                
+                if (allAccounts.length === 0 && investmentAccounts.length === 0) {
+                  return (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground">
+                        Nenhuma conta encontrada
+                      </CardContent>
+                    </Card>
+                  )
+                }
+
+                return (
+                  <div className="space-y-6">
+                    {/* Seção: Contas Bancárias */}
+                    {bankAccounts.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="h-5 w-5 text-slate-600" />
+                          <h3 className="text-lg font-semibold text-slate-900">Contas Bancárias</h3>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {bankAccounts.map((account) => {
+                            const AccountIcon = getAccountIcon(account)
+                            const typeLabel = getAccountTypeLabel(account)
+                            const badgeColor = getAccountTypeBadgeColor(account)
+                            return (
+                              <Card key={account.id}>
+                                <CardHeader>
+                                  <div className="flex items-center justify-between">
+                                    <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
+                                    <AccountIcon className="h-5 w-5 text-slate-400" />
+                                  </div>
+                                  <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
+                                  <div className="mt-2">
+                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
+                                      {typeLabel}
+                                    </span>
+                                  </div>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Saldo</p>
+                                      <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Seção: Investimentos */}
+                    {investmentAccounts.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="h-5 w-5 text-blue-600" />
+                          <h3 className="text-lg font-semibold text-slate-900">Investimentos</h3>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {investmentAccounts.map((account) => {
+                            const AccountIcon = getAccountIcon(account)
+                            const typeLabel = getAccountTypeLabel(account)
+                            const badgeColor = getAccountTypeBadgeColor(account)
+                            return (
+                              <Card key={account.id}>
+                                <CardHeader>
+                                  <div className="flex items-center justify-between">
+                                    <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
+                                    <AccountIcon className="h-5 w-5 text-blue-500" />
+                                  </div>
+                                  <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
+                                  <div className="mt-2">
+                                    <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
+                                      {typeLabel}
+                                    </span>
+                                  </div>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <p className="text-sm text-muted-foreground">Saldo</p>
+                                      <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </TabsContent>
 
             {/* Aba Cartões */}
