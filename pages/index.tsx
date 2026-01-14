@@ -4,7 +4,6 @@ import type { PluggyConnect as PluggyConnectType } from 'react-pluggy-connect'
 import dynamic from 'next/dynamic';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { Sidebar } from '@/components/Sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,6 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu, PiggyBank, TrendingDown } from 'lucide-react';
 import { useFinancialData, type Account, type Transaction } from '@/hooks/useFinancialData';
 import { Navbar } from '@/components/Navbar';
+import { TARGET_BANKS, findTargetBank, matchesTargetBank } from '@/lib/banks-config';
+import { isCreditCardSubtype, normalizeAccountSubtype } from '@/lib/pluggy-utils';
+import { logDataProcessing, generateRequestId } from '@/lib/debug-logger';
 
 const PluggyConnect = dynamic(
   () => (import('react-pluggy-connect') as any).then((mod: { PluggyConnect: any; }) => mod.PluggyConnect),
@@ -35,6 +37,7 @@ interface BankConnector {
   connectorName?: string;
   isConnected: boolean;
   status: string | null;
+  itemIds?: string[]; // Array de itemIds conectados deste connector
 }
 
 export default function Home() {
@@ -46,8 +49,13 @@ export default function Home() {
   const [categoryBalances, setCategoryBalances] = useState<{category: string, balance: number}[] | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [bankConnectors, setBankConnectors] = useState<BankConnector[]>([])
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false)
   const [activeTab, setActiveTab] = useState<string>('overview')
+
+  // #region agent log
+  useEffect(() => {
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:55',message:'State update - banks and connectors',data:{banksCount:banks.length,bankConnectorsCount:bankConnectors.length,banks:banks.map(b=>({itemId:b.itemId,bankName:b.bankName})),bankConnectors:bankConnectors.map(bc=>({name:bc.name,isConnected:bc.isConnected}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  }, [banks.length, bankConnectors.length]);
+  // #endregion
 
   // Usar o hook useFinancialData para gerenciar dados financeiros
   const {
@@ -68,36 +76,72 @@ export default function Home() {
   // Carregar dados de bancos e connectors (não gerenciados pelo hook)
   useEffect(() => {
     const loadBanksData = async () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:74',message:'loadBanksData started',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       try {
         // Carregar lista de bancos disponíveis
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:77',message:'Fetching /api/connectors',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         const connectorsResponse = await fetch('/api/connectors')
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:79',message:'/api/connectors response',data:{ok:connectorsResponse.ok,status:connectorsResponse.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         if (!connectorsResponse.ok) {
           const errorData = await connectorsResponse.json()
+          // #region agent log
+          fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:82',message:'/api/connectors error',data:{error:errorData.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
           throw new Error(errorData.error || 'Erro ao carregar connectors')
         }
         const connectorsData = await connectorsResponse.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:86',message:'/api/connectors data received',data:{hasError:!!connectorsData.error,banksCount:connectorsData.banks?.length||0,banks:connectorsData.banks},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         if (connectorsData.error) {
           toast.error(connectorsData.error || 'Erro ao carregar bancos disponíveis')
           setBankConnectors([])
         } else {
           setBankConnectors(connectorsData.banks || [])
+          // #region agent log
+          fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:90',message:'setBankConnectors called',data:{count:connectorsData.banks?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
         }
 
         // Carregar bancos conectados (para histórico)
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:93',message:'Fetching /api/banks',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         const banksResponse = await fetch('/api/banks')
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:95',message:'/api/banks response',data:{ok:banksResponse.ok,status:banksResponse.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         if (!banksResponse.ok) {
           const errorData = await banksResponse.json()
+          // #region agent log
+          fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:98',message:'/api/banks error',data:{error:errorData.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
           throw new Error(errorData.error || 'Erro ao carregar bancos')
         }
         const banksData = await banksResponse.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:101',message:'/api/banks data received',data:{hasError:!!banksData.error,banksCount:banksData.banks?.length||0,banks:banksData.banks},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         if (banksData.error) {
           toast.error(banksData.error || 'Erro ao carregar bancos conectados')
           setBanks([])
         } else {
           setBanks(banksData.banks || [])
+          // #region agent log
+          fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:105',message:'setBanks called',data:{count:banksData.banks?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+          // #endregion
         }
       } catch (error: any) {
         console.error('Error loading banks data:', error)
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:108',message:'loadBanksData error',data:{error:error.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         toast.error(error.message || 'Erro ao carregar dados de bancos.')
       }
     }
@@ -247,11 +291,13 @@ export default function Home() {
   // Calcular limite disponível (limite de crédito - fatura atual)
   const availableLimit = creditCards
     .reduce((sum, acc) => {
-      const currentInvoice = Math.abs(acc.balance || 0);
-      // Use availableCredit if available, otherwise calculate from creditLimit
+      // Priorizar availableCredit se disponível
       if (acc.availableCredit !== undefined && acc.availableCredit !== null) {
         return sum + Math.max(0, acc.availableCredit);
-      } else if (acc.creditLimit !== undefined && acc.creditLimit !== null) {
+      }
+      // Senão, calcular do creditLimit - currentInvoice
+      if (acc.creditLimit !== undefined && acc.creditLimit !== null) {
+        const currentInvoice = acc.currentInvoice || Math.abs(acc.balance || 0);
         return sum + Math.max(0, acc.creditLimit - currentInvoice);
       }
       // Fallback: if no limit data, return 0 (don't guess)
@@ -261,35 +307,31 @@ export default function Home() {
   // Filtrar contas por tipo
   const getAccountsByType = (type?: string, subtype?: string) => {
     if (subtype) {
-      return accounts.filter(acc => acc.subtype === subtype)
+      const normalizedSubtype = normalizeAccountSubtype(subtype);
+      return accounts.filter(acc => normalizeAccountSubtype(acc.subtype) === normalizedSubtype);
     }
     if (type) {
-      return accounts.filter(acc => acc.type === type)
+      return accounts.filter(acc => acc.type === type);
     }
     // Retornar contas bancárias e investimentos, excluindo cartões de crédito e empréstimos
     const filtered = accounts.filter(acc => {
-      const result = acc.subtype !== 'credit_card' && 
+      const result = !isCreditCardSubtype(acc.subtype) && 
         acc.type !== 'credit' && 
-        acc.type !== 'loan'
-      // #region agent log
-      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:265',message:'Filtering account in getAccountsByType',data:{accountId:acc.id,type:acc.type,subtype:acc.subtype,isCreditCard:acc.subtype==='credit_card',isCredit:acc.type==='credit',isLoan:acc.type==='loan',included:result},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
-      // #endregion
-      return result
-    })
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:270',message:'getAccountsByType result',data:{totalAccounts:accounts.length,filteredCount:filtered.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    return filtered
+        acc.type !== 'loan';
+      return result;
+    });
+    return filtered;
   }
 
   // Obter contas de investimento
   const getInvestmentAccounts = () => {
-    return accounts.filter(acc => 
-      acc.type === 'investment' || 
-      acc.subtype === 'investment' ||
-      acc.subtype === 'brokerage' ||
-      acc.subtype === 'mutual_fund'
-    )
+    return accounts.filter(acc => {
+      const normalizedSubtype = normalizeAccountSubtype(acc.subtype);
+      return acc.type === 'investment' || 
+             normalizedSubtype === 'investment' ||
+             normalizedSubtype === 'brokerage' ||
+             normalizedSubtype === 'mutual_fund';
+    });
   }
 
   // Extrair últimos 4 dígitos
@@ -311,73 +353,63 @@ export default function Home() {
 
   // Obter label amigável do tipo de conta
   const getAccountTypeLabel = (account: Account): string => {
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:300',message:'getAccountTypeLabel called',data:{accountId:account.id,type:account.type,subtype:account.subtype},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
+    const normalizedSubtype = normalizeAccountSubtype(account.subtype);
     
     // Cartão de crédito
-    if (account.subtype === 'credit_card') {
-      return 'Cartão de Crédito'
+    if (isCreditCardSubtype(account.subtype)) {
+      return 'Cartão de Crédito';
     }
     // Investimentos
-    if (account.type === 'investment' || account.subtype === 'investment') {
-      return 'Investimento'
+    if (account.type === 'investment' || normalizedSubtype === 'investment') {
+      return 'Investimento';
     }
     // Conta corrente/poupança
-    if (account.subtype === 'checking' || account.subtype === 'savings') {
-      return 'Conta Bancária'
+    if (normalizedSubtype === 'checking' || normalizedSubtype === 'savings') {
+      return 'Conta Bancária';
     }
     // Empréstimo
     if (account.type === 'loan') {
-      return 'Empréstimo'
+      return 'Empréstimo';
     }
     // Default: Conta Bancária
     if (account.type === 'bank' || !account.type) {
-      return 'Conta Bancária'
+      return 'Conta Bancária';
     }
     // Fallback: usar o tipo/subtype original
-    const label = account.subtype || account.type || 'Conta'
-    // #region agent log
-    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:323',message:'getAccountTypeLabel result',data:{accountId:account.id,label},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    return label
+    return account.subtype || account.type || 'Conta';
   }
 
   // Obter ícone baseado no tipo de conta
   const getAccountIcon = (account: Account) => {
-    if (account.subtype === 'credit_card') {
-      return CreditCard
+    if (isCreditCardSubtype(account.subtype)) {
+      return CreditCard;
     }
-    if (account.type === 'investment' || account.subtype === 'investment') {
-      return TrendingUp
+    const normalizedSubtype = normalizeAccountSubtype(account.subtype);
+    if (account.type === 'investment' || normalizedSubtype === 'investment') {
+      return TrendingUp;
     }
     if (account.type === 'loan') {
-      return FileText
+      return FileText;
     }
-    return Building2
+    return Building2;
   }
 
   // Obter cor do badge baseado no tipo
   const getAccountTypeBadgeColor = (account: Account): string => {
-    if (account.subtype === 'credit_card') {
-      return 'bg-purple-100 text-purple-700 border-purple-200'
+    if (isCreditCardSubtype(account.subtype)) {
+      return 'bg-purple-100 text-purple-700 border-purple-200';
     }
-    if (account.type === 'investment' || account.subtype === 'investment') {
-      return 'bg-blue-100 text-blue-700 border-blue-200'
+    const normalizedSubtype = normalizeAccountSubtype(account.subtype);
+    if (account.type === 'investment' || normalizedSubtype === 'investment') {
+      return 'bg-blue-100 text-blue-700 border-blue-200';
     }
     if (account.type === 'loan') {
-      return 'bg-red-100 text-red-700 border-red-200'
+      return 'bg-red-100 text-red-700 border-red-200';
     }
-    return 'bg-green-100 text-green-700 border-green-200'
+    return 'bg-green-100 text-green-700 border-green-200';
   }
 
-  // Definir os 4 bancos fixos
-  const TARGET_BANKS = [
-    { name: 'Nubank', searchNames: ['Nubank', 'Nu', 'Nu Bank'] },
-    { name: 'Bradesco', searchNames: ['Bradesco'] },
-    { name: 'XP', searchNames: ['XP', 'XP Investimentos'] },
-    { name: 'BTG', searchNames: ['BTG', 'BTG Banking', 'BTG Pactual', 'BTG Investimentos'] },
-  ]
+  // TARGET_BANKS agora vem de lib/banks-config.ts
 
   // Interface para dados do card de banco
   interface BankCardData {
@@ -392,78 +424,144 @@ export default function Home() {
 
   // Obter contas de um banco específico
   const getBankAccounts = (bankName: string): Account[] => {
-    // Encontrar itemIds que correspondem ao banco
-    const targetBank = TARGET_BANKS.find(tb => tb.name === bankName)
-    if (!targetBank) return []
+    const requestId = generateRequestId();
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:395',message:'getBankAccounts called',data:{bankName,banksCount:banks.length,accountsCount:accounts.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
+    // Encontrar banco alvo na configuração
+    const targetBank = findTargetBank(bankName);
+    if (!targetBank) {
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:400',message:'targetBank not found',data:{bankName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      logDataProcessing('getBankAccounts', { bankName }, { accountsCount: 0, reason: 'targetBank not found' }, requestId);
+      return [];
+    }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:405',message:'Filtering banks',data:{targetBankName:targetBank.name,banks:banks.map(b=>({itemId:b.itemId,bankName:b.bankName}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    // Encontrar itemIds que correspondem ao banco usando matching robusto
     const bankItemIds = banks
       .filter(bank => {
-        const bankNameLower = bank.bankName.toLowerCase()
-        return targetBank.searchNames.some(sn => 
-          bankNameLower.includes(sn.toLowerCase()) || 
-          sn.toLowerCase().includes(bankNameLower)
-        )
+        const matches = matchesTargetBank(bank.bankName, targetBank);
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:410',message:'Bank matching check',data:{bankName:bank.bankName,targetBankName:targetBank.name,matches},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        return matches;
       })
-      .map(bank => bank.itemId)
+      .map(bank => bank.itemId);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:416',message:'Bank itemIds found',data:{bankName,itemIds:bankItemIds},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    logDataProcessing('getBankAccounts', { 
+      bankName, 
+      banksCount: banks.length,
+      matchingBanksCount: bankItemIds.length 
+    }, { itemIds: bankItemIds }, requestId);
 
     // Retornar contas que pertencem a esses itemIds
-    return accounts.filter(acc => bankItemIds.includes(acc.itemId))
+    const bankAccounts = accounts.filter(acc => bankItemIds.includes(acc.itemId));
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:425',message:'getBankAccounts result',data:{bankName,itemIds:bankItemIds,accountsCount:bankAccounts.length,accountItemIds:bankAccounts.map(a=>a.itemId)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
+    logDataProcessing('getBankAccounts', { bankName, itemIds: bankItemIds }, { 
+      accountsCount: bankAccounts.length 
+    }, requestId);
+    
+    return bankAccounts;
   }
 
   // Calcular métricas de um banco
   const calculateBankMetrics = (bankName: string): BankCardData => {
-    const bankAccounts = getBankAccounts(bankName)
-    // Buscar connector que corresponde ao banco (pode ter nomes diferentes)
-    const targetBank = TARGET_BANKS.find(tb => tb.name === bankName)
-    const connector = bankConnectors.find(bc => {
-      if (!targetBank) return false
-      const connectorNameLower = (bc.name || '').toLowerCase()
-      return targetBank.searchNames.some(sn => 
-        connectorNameLower.includes(sn.toLowerCase()) ||
-        sn.toLowerCase().includes(connectorNameLower)
-      )
-    })
+    const requestId = generateRequestId();
+    const bankAccounts = getBankAccounts(bankName);
     
-    // Conta corrente: soma de saldos de contas checking ou bank
+    // Buscar connector que corresponde ao banco usando configuração unificada
+    const targetBank = findTargetBank(bankName);
+    const connector = bankConnectors.find(bc => {
+      if (!targetBank) return false;
+      return matchesTargetBank(bc.connectorName || bc.name || '', targetBank);
+    });
+    
+    // Verificar se está conectado: se há banks conectados OU se há contas para este banco
+    // Isso corrige o problema de isConnected sempre ser false
+    const hasConnectedBanks = banks.some(bank => {
+      if (!targetBank) return false;
+      return matchesTargetBank(bank.bankName, targetBank);
+    });
+    const isConnected = hasConnectedBanks || bankAccounts.length > 0 || (connector?.isConnected ?? false);
+    
+    logDataProcessing('calculateBankMetrics', { bankName, bankAccountsCount: bankAccounts.length }, null, requestId);
+    
+    // Conta corrente: soma de saldos de contas checking ou bank (excluindo cartões)
     const checkingBalance = bankAccounts
-      .filter(acc => acc.subtype === 'checking' || acc.type === 'bank' || (!acc.type && acc.subtype !== 'credit_card'))
-      .reduce((sum, acc) => sum + (acc.balance || 0), 0)
+      .filter(acc => {
+        const normalizedSubtype = normalizeAccountSubtype(acc.subtype);
+        return normalizedSubtype === 'checking' || 
+               normalizedSubtype === 'savings' ||
+               (acc.type === 'bank' && !isCreditCardSubtype(acc.subtype)) ||
+               (!acc.type && !isCreditCardSubtype(acc.subtype));
+      })
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-    // Fatura do cartão: soma de saldos negativos de cartões de crédito
-    const creditCards = bankAccounts.filter(acc => acc.subtype === 'credit_card')
+    // Fatura do cartão: usar currentInvoice se disponível, senão Math.abs(balance)
+    const creditCards = bankAccounts.filter(acc => isCreditCardSubtype(acc.subtype));
     const creditCardBill = creditCards
       .reduce((sum, acc) => {
-        const balance = acc.balance || 0
-        return sum + (balance < 0 ? Math.abs(balance) : 0)
-      }, 0)
+        // Priorizar currentInvoice, senão usar balance negativo
+        if (acc.currentInvoice !== undefined && acc.currentInvoice !== null) {
+          return sum + acc.currentInvoice;
+        }
+        const balance = acc.balance || 0;
+        return sum + (balance < 0 ? Math.abs(balance) : balance);
+      }, 0);
 
-    // Limite disponível: calcular baseado em um limite estimado (10k por cartão - fatura)
+    // Limite disponível: usar availableCredit real, não hardcoded
     const availableLimit = creditCards
       .reduce((sum, acc) => {
-        const balance = acc.balance || 0
-        const estimatedLimit = 10000 // Limite estimado padrão
-        return sum + Math.max(0, estimatedLimit + balance)
-      }, 0)
+        if (acc.availableCredit !== undefined && acc.availableCredit !== null) {
+          return sum + Math.max(0, acc.availableCredit);
+        }
+        // Fallback: calcular do creditLimit - currentInvoice se disponível
+        if (acc.creditLimit !== undefined && acc.creditLimit !== null) {
+          const currentInvoice = acc.currentInvoice || Math.abs(acc.balance || 0);
+          return sum + Math.max(0, acc.creditLimit - currentInvoice);
+        }
+        // Se não houver dados, retornar 0 (não adivinhar)
+        return sum;
+      }, 0);
 
     // Investimentos totais: soma de saldos de contas de investimento
     const investmentsTotal = bankAccounts
-      .filter(acc => 
-        acc.type === 'investment' || 
-        acc.subtype === 'investment' ||
-        acc.subtype === 'brokerage' ||
-        acc.subtype === 'mutual_fund'
-      )
-      .reduce((sum, acc) => sum + (acc.balance || 0), 0)
+      .filter(acc => {
+        const normalizedSubtype = normalizeAccountSubtype(acc.subtype);
+        return acc.type === 'investment' || 
+               normalizedSubtype === 'investment' ||
+               normalizedSubtype === 'brokerage' ||
+               normalizedSubtype === 'mutual_fund';
+      })
+      .reduce((sum, acc) => sum + (acc.balance || 0), 0);
 
-    return {
+    const metrics = {
       bankName,
       connectorId: connector?.connectorId || null,
-      isConnected: connector?.isConnected || false,
+      isConnected,
       checkingBalance,
       creditCardBill,
       availableLimit,
       investmentsTotal,
-    }
+    };
+
+    logDataProcessing('calculateBankMetrics', { bankName }, metrics, requestId);
+    return metrics;
   }
 
   return (
@@ -479,63 +577,7 @@ export default function Home() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
       }} />
 
-      <Sidebar 
-        onConnectBank={() => handleConnectBank()}
-        onCopyCpf={copyCpf}
-        isWidgetOpen={isWidgetOpen}
-      />
-
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Mobile Sidebar */}
-      <aside className={`lg:hidden fixed left-0 top-0 h-screen w-64 bg-slate-900 text-slate-50 border-r border-slate-800 flex flex-col z-50 transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="p-6 border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <Wallet className="h-6 w-6 text-slate-300" />
-            <h1 className="text-xl font-semibold">Pluggy Expenses</h1>
-          </div>
-        </div>
-        <div className="p-4 border-t border-slate-800 space-y-3 mt-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={copyCpf}
-            className="w-full bg-slate-800 border-slate-700 text-slate-100 hover:bg-slate-700"
-          >
-            Copiar CPF
-          </Button>
-          <Button
-            size="lg"
-            onClick={() => {
-              handleConnectBank()
-              setSidebarOpen(false)
-            }}
-            disabled={isWidgetOpen}
-            className="w-full bg-slate-700 hover:bg-slate-600 text-white"
-          >
-            Conectar Bancos
-          </Button>
-        </div>
-      </aside>
-
-      <main className="flex-1 lg:ml-64 overflow-auto">
-        {/* Mobile Menu Button */}
-        <div className="lg:hidden fixed top-20 left-4 z-30">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="bg-white shadow-md"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-        </div>
+      <main className="flex-1 overflow-auto">
         <div className="p-4 lg:p-6 pt-4 lg:pt-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="hidden">
@@ -598,6 +640,7 @@ export default function Home() {
                             <TableHead>Categoria</TableHead>
                             <TableHead>Valor</TableHead>
                             <TableHead>Conta</TableHead>
+                            <TableHead>CNPJ</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -618,6 +661,9 @@ export default function Home() {
                               <TableCell>
                                 <Skeleton className="h-4 w-28" />
                               </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-20" />
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -633,11 +679,13 @@ export default function Home() {
                             <TableHead>Categoria</TableHead>
                             <TableHead>Valor</TableHead>
                             <TableHead>Conta</TableHead>
+                            <TableHead>CNPJ</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {transactions.map((transaction) => {
-                            const account = accounts.find(acc => acc.id === transaction.accountId)
+                            const account = accounts.find(acc => acc.id === transaction.accountId);
+                            const cnpj = transaction.merchant?.cnpj;
                             return (
                               <TableRow key={transaction.id}>
                                 <TableCell>
@@ -656,8 +704,17 @@ export default function Home() {
                                   </strong>
                                 </TableCell>
                                 <TableCell>{account?.name || 'N/A'}</TableCell>
+                                <TableCell>
+                                  {cnpj ? (
+                                    <span className="text-xs font-mono">
+                                      {cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
                               </TableRow>
-                            )
+                            );
                           })}
                         </TableBody>
                       </Table>
@@ -669,9 +726,31 @@ export default function Home() {
 
             {/* Aba Bancos */}
             <TabsContent value="banks" className="space-y-6">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900">Contas</h2>
-                <p className="text-sm text-muted-foreground mt-1">Visualize suas contas por banco</p>
+              <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-slate-900">Contas</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Visualize suas contas por banco</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={copyCpf}
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Copiar CPF
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleConnectBank()}
+                    disabled={isWidgetOpen}
+                    className="flex items-center gap-2"
+                  >
+                    <Building2 className="h-4 w-4" />
+                    Conectar Bancos
+                  </Button>
+                </div>
               </div>
               
               {loading ? (
@@ -697,18 +776,26 @@ export default function Home() {
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   {TARGET_BANKS.map((targetBank) => {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:743',message:'Rendering bank card',data:{targetBankName:targetBank.name,bankConnectorsCount:bankConnectors.length,banksCount:banks.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                    // #endregion
                     const metrics = calculateBankMetrics(targetBank.name)
                     const connector = bankConnectors.find(bc => bc.name === targetBank.name)
+                    // #region agent log
+                    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:747',message:'Bank card metrics',data:{targetBankName:targetBank.name,metricsIsConnected:metrics.isConnected,connectorFound:!!connector},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                    // #endregion
                     
                     return (
                       <Card key={targetBank.name} className="border-2">
                         <CardHeader>
-                          <CardTitle className="text-xl">{targetBank.name}</CardTitle>
-                          {metrics.isConnected && (
-                            <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 mt-2 inline-block">
-                              Conectado
-                            </span>
-                          )}
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-xl">{targetBank.name}</CardTitle>
+                            {metrics.isConnected && (
+                              <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700">
+                                Conectado
+                              </span>
+                            )}
+                          </div>
                         </CardHeader>
                         <CardContent className="space-y-4">
                           {metrics.isConnected ? (
@@ -736,6 +823,38 @@ export default function Home() {
                                 <p className="text-lg font-bold text-blue-600">
                                   R$ {metrics.investmentsTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </p>
+                              </div>
+                              <div className="pt-2 border-t">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={async () => {
+                                    const currentTargetBank = findTargetBank(targetBank.name);
+                                    const bankItemIds = banks
+                                      .filter(bank => {
+                                        if (!currentTargetBank) return false;
+                                        return matchesTargetBank(bank.bankName, currentTargetBank);
+                                      })
+                                      .map(bank => bank.itemId);
+                                    
+                                    if (bankItemIds.length > 0) {
+                                      // Atualizar o primeiro itemId encontrado
+                                      const success = await syncItem(bankItemIds[0]);
+                                      if (success) {
+                                        toast.success(`${targetBank.name} atualizado com sucesso!`);
+                                        await refreshData();
+                                      } else {
+                                        toast.error(`Erro ao atualizar ${targetBank.name}`);
+                                      }
+                                    } else {
+                                      toast.error(`Nenhum banco conectado encontrado para ${targetBank.name}`);
+                                    }
+                                  }}
+                                  disabled={loading}
+                                >
+                                  {loading ? 'Atualizando...' : 'Atualizar Dados'}
+                                </Button>
                               </div>
                             </>
                           ) : (
@@ -803,10 +922,26 @@ export default function Home() {
                         <div className="space-y-2">
                           <div>
                             <p className="text-sm text-muted-foreground">Fatura Atual</p>
-                            <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {account.currencyCode || 'R$'} {Math.abs(account.balance || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <p className="text-2xl font-bold text-red-600">
+                              {account.currencyCode || 'R$'} {(account.currentInvoice || Math.abs(account.balance || 0)).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </p>
                           </div>
+                          {account.creditLimit !== undefined && account.creditLimit !== null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Limite Total</p>
+                              <p className="text-sm font-semibold text-slate-600">
+                                R$ {account.creditLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          )}
+                          {account.availableCredit !== undefined && account.availableCredit !== null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Limite Disponível</p>
+                              <p className="text-sm font-semibold text-green-600">
+                                R$ {account.availableCredit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </CardContent>
                     </Card>

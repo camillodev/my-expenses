@@ -33,7 +33,8 @@
     "react-toastify": "^11.0.5",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "4.8.4"
+    "typescript": "4.8.4",
+    "zustand": "^5.0.10"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.23",

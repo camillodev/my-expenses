@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PluggyClient } from 'pluggy-sdk';
 import { createSupabaseClient, getSupabaseErrorResponse } from '../../lib/supabase';
+import { generateRequestId, logApiRequest, logApiResponse, logDataProcessing, logError } from '../../lib/debug-logger';
+import { extractCreditData, isCreditCardSubtype } from '../../lib/pluggy-utils';
 
 const PLUGGY_CLIENT_ID = process.env.PLUGGY_CLIENT_ID || '';
 const PLUGGY_CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET || '';
@@ -9,14 +11,19 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<any>
 ) {
+  const requestId = generateRequestId();
+  const startTime = Date.now();
+
   // Validar Supabase
   const supabaseError = getSupabaseErrorResponse();
   if (supabaseError) {
+    logError('/api/accounts', new Error('Supabase configuration error'), supabaseError, requestId);
     return res.status(500).json(supabaseError);
   }
 
   const supabaseResult = createSupabaseClient();
   if (!supabaseResult.isValid || !supabaseResult.client) {
+    logError('/api/accounts', new Error('Supabase client error'), supabaseResult.error, requestId);
     return res.status(500).json({ 
       error: 'Erro ao configurar banco de dados',
       details: supabaseResult.error
@@ -31,6 +38,7 @@ export default async function handler(
 
   try {
     const { itemId } = req.query;
+    logApiRequest('/api/accounts', { itemId }, requestId);
 
     if (itemId) {
       // Buscar contas de um item específico
@@ -67,15 +75,9 @@ export default async function handler(
               console.log(`[DEBUG] Account ${typeKey} full structure:`, JSON.stringify(accountDetails, null, 2));
             }
             
-            // Extract credit card specific fields
-            const creditLimit = (accountDetails as any).creditLimit || 
-                               (accountDetails as any).creditData?.limit || 
-                               (accountDetails as any).limit || 
-                               null;
-            const availableCredit = (accountDetails as any).availableCredit || 
-                                   (accountDetails as any).creditData?.availableCredit || 
-                                   (accountDetails as any).available || 
-                                   null;
+            // Extract credit card specific fields using utility function
+            const creditData = extractCreditData(accountDetails);
+            logDataProcessing('extractCreditData', { accountId: account.id, subtype: accountDetails.subtype }, creditData, requestId);
 
             return {
               ...account,
@@ -84,8 +86,9 @@ export default async function handler(
               subtype: accountDetails.subtype,
               balance: accountDetails.balance,
               currencyCode: accountDetails.currencyCode,
-              creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : undefined,
-              availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : undefined,
+              creditLimit: creditData.creditLimit ?? undefined,
+              availableCredit: creditData.availableCredit ?? undefined,
+              currentInvoice: creditData.currentInvoice ?? undefined,
               // Include all fields for debugging (will be filtered later)
               _debugFullAccount: accountDetails
             };
@@ -96,6 +99,8 @@ export default async function handler(
         })
       );
 
+      const duration = Date.now() - startTime;
+      logApiResponse('/api/accounts', { accountsCount: accountsWithDetails.length }, requestId, duration);
       return res.status(200).json({ accounts: accountsWithDetails });
     } else {
       // Buscar todas as contas do Supabase
@@ -107,18 +112,22 @@ export default async function handler(
       if (error) {
         // Se tabela não existe, retornar array vazio
         if (error.code === 'PGRST205') {
+          const duration = Date.now() - startTime;
+          logApiResponse('/api/accounts', { accountsCount: 0 }, requestId, duration);
           return res.status(200).json({ accounts: [] });
         }
-        console.error('Error fetching accounts from Supabase:', error);
+        logError('/api/accounts', error, { step: 'fetchFromSupabase' }, requestId);
         return res.status(500).json({ 
           error: 'Erro ao buscar contas',
           details: error.message 
         });
       }
 
+      logDataProcessing('fetchFromSupabase', null, { accountsCount: accountsToProcess?.length || 0 }, requestId);
+
       // Buscar detalhes de cada conta do Pluggy
       const accountsWithDetails = await Promise.all(
-        accountsToProcess.map(async (account) => {
+        (accountsToProcess || []).map(async (account) => {
           try {
             const accountDetails = await client.fetchAccount(account.id);
             
@@ -132,15 +141,9 @@ export default async function handler(
               console.log(`[DEBUG] Account ${typeKey} full structure:`, JSON.stringify(accountDetails, null, 2));
             }
             
-            // Extract credit card specific fields
-            const creditLimit = (accountDetails as any).creditLimit || 
-                               (accountDetails as any).creditData?.limit || 
-                               (accountDetails as any).limit || 
-                               null;
-            const availableCredit = (accountDetails as any).availableCredit || 
-                                   (accountDetails as any).creditData?.availableCredit || 
-                                   (accountDetails as any).available || 
-                                   null;
+            // Extract credit card specific fields using utility function
+            const creditData = extractCreditData(accountDetails);
+            logDataProcessing('extractCreditData', { accountId: account.id, subtype: accountDetails.subtype }, creditData, requestId);
 
             return {
               ...account,
@@ -149,22 +152,26 @@ export default async function handler(
               subtype: accountDetails.subtype,
               balance: accountDetails.balance,
               currencyCode: accountDetails.currencyCode,
-              creditLimit: creditLimit !== null && creditLimit !== undefined ? creditLimit : undefined,
-              availableCredit: availableCredit !== null && availableCredit !== undefined ? availableCredit : undefined,
+              creditLimit: creditData.creditLimit ?? undefined,
+              availableCredit: creditData.availableCredit ?? undefined,
+              currentInvoice: creditData.currentInvoice ?? undefined,
               // Include all fields for debugging (will be filtered later)
               _debugFullAccount: accountDetails
             };
-          } catch (err) {
-            console.error(`Error fetching account ${account.id}:`, err);
+          } catch (err: any) {
+            logError('/api/accounts', err, { accountId: account.id }, requestId);
             return account;
           }
         })
       );
 
+      const duration = Date.now() - startTime;
+      logApiResponse('/api/accounts', { accountsCount: accountsWithDetails.length }, requestId, duration);
       res.status(200).json({ accounts: accountsWithDetails });
     }
   } catch (error: any) {
-    console.error('Error fetching accounts:', error);
+    const duration = Date.now() - startTime;
+    logError('/api/accounts', error, { itemId: req.query.itemId }, requestId);
     res.status(500).json({ 
       error: 'Erro ao buscar contas',
       details: error.message || 'Internal server error' 
