@@ -1,11 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PluggyClient } from 'pluggy-sdk';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseClient, getSupabaseErrorResponse } from '../../lib/supabase';
 
 const PLUGGY_CLIENT_ID = process.env.PLUGGY_CLIENT_ID || '';
 const PLUGGY_CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET || '';
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
 export default async function handler(
   req: NextApiRequest,
@@ -15,11 +13,27 @@ export default async function handler(
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Validar Supabase
+  const supabaseError = getSupabaseErrorResponse();
+  if (supabaseError) {
+    console.error('Supabase not configured for webhook');
+    return res.status(500).json(supabaseError);
+  }
+
+  const supabaseResult = createSupabaseClient();
+  if (!supabaseResult.isValid || !supabaseResult.client) {
+    console.error('Failed to create Supabase client for webhook');
+    return res.status(500).json({ 
+      error: 'Erro ao configurar banco de dados',
+      details: supabaseResult.error
+    });
+  }
+
+  const supabase = supabaseResult.client;
   const client = new PluggyClient({
     clientId: PLUGGY_CLIENT_ID,
     clientSecret: PLUGGY_CLIENT_SECRET,
   });
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   try {
     const { itemId, type } = req.body;
@@ -29,6 +43,7 @@ export default async function handler(
       // Buscar contas do item
       const accounts = await client.fetchAccounts(itemId);
       const transactions = [];
+      const errors: string[] = [];
 
       for (const account of accounts.results) {
         try {
@@ -36,7 +51,7 @@ export default async function handler(
           transactions.push(...accountTransactions);
 
           // Salvar/atualizar conta no Supabase
-          await supabase
+          const { error: accountError, data: accountData } = await supabase
             .from('accounts')
             .upsert({ 
               id: account.id, 
@@ -45,9 +60,19 @@ export default async function handler(
               onConflict: 'id'
             });
 
+          if (accountError) {
+            const errorMsg = `Erro ao salvar conta ${account.id}: ${accountError.message}`;
+            console.error(errorMsg);
+            errors.push(errorMsg);
+          } else if (!accountData || accountData.length === 0) {
+            const errorMsg = `Falha ao salvar conta ${account.id}: nenhum dado retornado`;
+            console.error(errorMsg);
+            errors.push(errorMsg);
+          }
+
           // Salvar/atualizar transações no Supabase
           if (accountTransactions.length > 0) {
-            await supabase.from('transactions').upsert(
+            const { error: txError, data: txData } = await supabase.from('transactions').upsert(
               accountTransactions.map((tx) => ({
                 id: tx.id,
                 accountId: tx.accountId,
@@ -59,18 +84,37 @@ export default async function handler(
                 onConflict: 'id'
               }
             );
+
+            if (txError) {
+              const errorMsg = `Erro ao salvar transações da conta ${account.id}: ${txError.message}`;
+              console.error(errorMsg);
+              errors.push(errorMsg);
+            } else if (!txData || txData.length === 0) {
+              const errorMsg = `Falha ao salvar transações da conta ${account.id}: nenhum dado retornado`;
+              console.error(errorMsg);
+              errors.push(errorMsg);
+            }
           }
-        } catch (err) {
-          console.error(`Error processing account ${account.id}:`, err);
+        } catch (err: any) {
+          const errorMsg = `Erro ao processar conta ${account.id}: ${err.message}`;
+          console.error(errorMsg);
+          errors.push(errorMsg);
         }
       }
 
-      console.log(`Webhook processed: ${accounts.results.length} accounts, ${transactions.length} transactions`);
+      if (errors.length > 0) {
+        console.error(`Webhook processed with errors: ${accounts.results.length} accounts, ${transactions.length} transactions. Errors: ${errors.join('; ')}`);
+      } else {
+        console.log(`Webhook processed: ${accounts.results.length} accounts, ${transactions.length} transactions`);
+      }
     }
 
     res.status(200).json({ received: true });
   } catch (error: any) {
     console.error('Error processing webhook:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Erro ao processar webhook',
+      details: error.message || 'Internal server error' 
+    });
   }
 }

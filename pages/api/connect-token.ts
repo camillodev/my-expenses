@@ -6,7 +6,7 @@ const PLUGGY_CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET || ''
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse<{ accessToken: string }>
+  res: NextApiResponse<{ accessToken: string } | { error: string }>
 ) {
   try {
     const client = new PluggyClient({
@@ -30,8 +30,7 @@ export default async function handler(
       stack: error.stack
     });
     res.status(500).json({ 
-      error: error.message || 'Internal server error',
-      accessToken: '' 
+      error: error.message || 'Internal server error'
     });
   }
 }

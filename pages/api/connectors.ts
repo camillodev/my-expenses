@@ -1,11 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PluggyClient } from 'pluggy-sdk';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseClient, getSupabaseErrorResponse } from '../../lib/supabase';
 
 const PLUGGY_CLIENT_ID = process.env.PLUGGY_CLIENT_ID || '';
 const PLUGGY_CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET || '';
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
 // Mapeamento dos bancos solicitados (nomes podem variar no Pluggy)
 // Baseado na documentação do Pluggy, estes são os nomes comuns dos connectors
@@ -21,37 +19,58 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<any>
 ) {
+  // Validar Supabase
+  const supabaseError = getSupabaseErrorResponse();
+  if (supabaseError) {
+    return res.status(500).json(supabaseError);
+  }
+
+  const supabaseResult = createSupabaseClient();
+  if (!supabaseResult.isValid || !supabaseResult.client) {
+    return res.status(500).json({ 
+      error: 'Erro ao configurar banco de dados',
+      details: supabaseResult.error
+    });
+  }
+
+  const supabase = supabaseResult.client;
   const client = new PluggyClient({
     clientId: PLUGGY_CLIENT_ID,
     clientSecret: PLUGGY_CLIENT_SECRET,
   });
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   try {
     // Buscar todos os connectors disponíveis
     const connectorsResponse = await client.fetchConnectors();
     const allConnectors = connectorsResponse.results || [];
 
-    // Buscar itemIds do Supabase (se a tabela existir)
+    // Buscar itemIds do Supabase
     let itemIdsFromSupabase: string[] = [];
-    if (SUPABASE_URL && SUPABASE_KEY) {
-      try {
-        const { data: accounts, error } = await supabase
-          .from('accounts')
-          .select('itemId');
-        
-        if (error) {
-          // Tabela pode não existir ainda - isso é ok
-          if (error.code !== 'PGRST205') {
-            console.error('Error fetching accounts from Supabase:', error);
-          }
+    try {
+      const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('itemId');
+      
+      if (error) {
+        // Se tabela não existe, usar array vazio
+        if (error.code === 'PGRST205') {
+          itemIdsFromSupabase = [];
         } else {
-          itemIdsFromSupabase = accounts?.map(acc => acc.itemId).filter(Boolean) || [];
+          console.error('Error fetching accounts from Supabase:', error);
+          return res.status(500).json({ 
+            error: 'Erro ao buscar contas do banco de dados',
+            details: error.message 
+          });
         }
-      } catch (err) {
-        // Ignorar erros de tabela não encontrada
-        console.error('Error accessing Supabase:', err);
+      } else {
+        itemIdsFromSupabase = accounts?.map(acc => acc.itemId).filter(Boolean) || [];
       }
+    } catch (err: any) {
+      console.error('Error accessing Supabase:', err);
+      return res.status(500).json({ 
+        error: 'Erro ao acessar banco de dados',
+        details: err.message 
+      });
     }
 
     const allItemIds = new Set(itemIdsFromSupabase);
@@ -116,6 +135,9 @@ export default async function handler(
     res.status(200).json({ banks: banksList });
   } catch (error: any) {
     console.error('Error fetching connectors:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Erro ao buscar connectors',
+      details: error.message || 'Internal server error' 
+    });
   }
 }

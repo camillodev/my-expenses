@@ -1,43 +1,54 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { PluggyClient } from 'pluggy-sdk';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseClient, getSupabaseErrorResponse } from '../../lib/supabase';
 
 const PLUGGY_CLIENT_ID = process.env.PLUGGY_CLIENT_ID || '';
 const PLUGGY_CLIENT_SECRET = process.env.PLUGGY_CLIENT_SECRET || '';
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse<any>
 ) {
+  // Validar Supabase
+  const supabaseError = getSupabaseErrorResponse();
+  if (supabaseError) {
+    return res.status(500).json(supabaseError);
+  }
+
+  const supabaseResult = createSupabaseClient();
+  if (!supabaseResult.isValid || !supabaseResult.client) {
+    return res.status(500).json({ 
+      error: 'Erro ao configurar banco de dados',
+      details: supabaseResult.error
+    });
+  }
+
+  const supabase = supabaseResult.client;
   const client = new PluggyClient({
     clientId: PLUGGY_CLIENT_ID,
     clientSecret: PLUGGY_CLIENT_SECRET,
   });
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   try {
     const { itemId } = req.query;
 
     if (itemId) {
       // Buscar contas de um item específico
-      let accounts: any[] = [];
-      if (SUPABASE_URL && SUPABASE_KEY) {
-        const { data, error } = await supabase
-          .from('accounts')
-          .select('*')
-          .eq('itemId', itemId as string)
-          .order('id');
+      const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('itemId', itemId as string)
+        .order('id');
 
-        if (error) {
-          // Se tabela não existe, retornar array vazio
-          if (error.code === 'PGRST205') {
-            return res.status(200).json({ accounts: [] });
-          }
-          return res.status(500).json({ error: error.message });
+      if (error) {
+        // Se tabela não existe, retornar array vazio
+        if (error.code === 'PGRST205') {
+          return res.status(200).json({ accounts: [] });
         }
-        accounts = data || [];
+        return res.status(500).json({ 
+          error: 'Erro ao buscar contas',
+          details: error.message 
+        });
       }
 
       // Buscar informações detalhadas do Pluggy
@@ -62,22 +73,22 @@ export default async function handler(
 
       return res.status(200).json({ accounts: accountsWithDetails });
     } else {
-      // Buscar todas as contas do Supabase (se a tabela existir)
-      let accountsToProcess: any[] = [];
-      if (SUPABASE_URL && SUPABASE_KEY) {
-        const { data, error } = await supabase
-          .from('accounts')
-          .select('*')
-          .order('itemId, id');
+      // Buscar todas as contas do Supabase
+      const { data: accountsToProcess, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .order('itemId, id');
 
-        if (error) {
-          // Tabela pode não existir ainda - isso é ok
-          if (error.code !== 'PGRST205') {
-            console.error('Error fetching accounts from Supabase:', error);
-          }
-        } else {
-          accountsToProcess = data || [];
+      if (error) {
+        // Se tabela não existe, retornar array vazio
+        if (error.code === 'PGRST205') {
+          return res.status(200).json({ accounts: [] });
         }
+        console.error('Error fetching accounts from Supabase:', error);
+        return res.status(500).json({ 
+          error: 'Erro ao buscar contas',
+          details: error.message 
+        });
       }
 
       // Buscar detalhes de cada conta do Pluggy
@@ -104,6 +115,9 @@ export default async function handler(
     }
   } catch (error: any) {
     console.error('Error fetching accounts:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    res.status(500).json({ 
+      error: 'Erro ao buscar contas',
+      details: error.message || 'Internal server error' 
+    });
   }
 }
