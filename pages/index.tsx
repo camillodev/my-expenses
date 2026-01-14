@@ -10,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Wallet, TrendingUp, CreditCard, Building2, FileText, DollarSign, Menu, PiggyBank, TrendingDown } from 'lucide-react';
+import { useFinancialData, type Account, type Transaction } from '@/hooks/useFinancialData';
 
 const PluggyConnect = dynamic(
   () => (import('react-pluggy-connect') as any).then((mod: { PluggyConnect: any; }) => mod.PluggyConnect),
@@ -26,32 +28,12 @@ interface Bank {
   lastUpdatedAt: string;
 }
 
-interface Account {
-  id: string;
-  itemId: string;
-  name?: string;
-  type?: string;
-  subtype?: string;
-  balance?: number;
-  currencyCode?: string;
-}
-
 interface BankConnector {
   name: string;
   connectorId: number | null;
   connectorName?: string;
   isConnected: boolean;
   status: string | null;
-}
-
-interface Transaction {
-  id: string;
-  accountId: string;
-  amount: number;
-  category?: string;
-  date: string;
-  description?: string;
-  accounts?: Account;
 }
 
 export default function Home() {
@@ -63,15 +45,28 @@ export default function Home() {
   const [categoryBalances, setCategoryBalances] = useState<{category: string, balance: number}[] | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [bankConnectors, setBankConnectors] = useState<BankConnector[]>([])
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false)
 
+  // Usar o hook useFinancialData para gerenciar dados financeiros
+  const {
+    accounts,
+    transactions,
+    creditCards,
+    loading,
+    syncItem,
+    refreshData,
+  } = useFinancialData(true)
+  
+  // #region agent log
   useEffect(() => {
-    const loadData = async () => {
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:67',message:'Hook state update',data:{accountsCount:accounts.length,transactionsCount:transactions.length,creditCardsCount:creditCards.length,loading},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+  }, [accounts.length, transactions.length, creditCards.length, loading]);
+  // #endregion
+
+  // Carregar dados de bancos e connectors (não gerenciados pelo hook)
+  useEffect(() => {
+    const loadBanksData = async () => {
       try {
-        setLoading(true)
         // Carregar lista de bancos disponíveis
         const connectorsResponse = await fetch('/api/connectors')
         if (!connectorsResponse.ok) {
@@ -99,43 +94,13 @@ export default function Home() {
         } else {
           setBanks(banksData.banks || [])
         }
-
-        // Carregar contas
-        const accountsResponse = await fetch('/api/accounts')
-        if (!accountsResponse.ok) {
-          const errorData = await accountsResponse.json()
-          throw new Error(errorData.error || 'Erro ao carregar contas')
-        }
-        const accountsData = await accountsResponse.json()
-        if (accountsData.error) {
-          toast.error(accountsData.error || 'Erro ao carregar contas')
-          setAccounts([])
-        } else {
-          setAccounts(accountsData.accounts || [])
-        }
-
-        // Carregar transações
-        const transactionsResponse = await fetch('/api/transactions?limit=100')
-        if (!transactionsResponse.ok) {
-          const errorData = await transactionsResponse.json()
-          throw new Error(errorData.error || 'Erro ao carregar transações')
-        }
-        const transactionsData = await transactionsResponse.json()
-        if (transactionsData.error) {
-          toast.error(transactionsData.error || 'Erro ao carregar transações')
-          setTransactions([])
-        } else {
-          setTransactions(transactionsData.transactions || [])
-        }
       } catch (error: any) {
-        console.error('Error loading data:', error)
-        toast.error(error.message || 'Erro ao carregar dados. Verifique a configuração do banco de dados.')
-      } finally {
-        setLoading(false)
+        console.error('Error loading banks data:', error)
+        toast.error(error.message || 'Erro ao carregar dados de bancos.')
       }
     }
 
-    loadData()
+    loadBanksData()
   }, [])
 
   const copyCpf = async () => {
@@ -187,49 +152,29 @@ export default function Home() {
   }
 
   const onSuccess = async (itemData: { item: any; }) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:149',message:'onSuccess called',data:{itemId:itemData.item.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     setIsWidgetOpen(false)
     setSelectedConnectorId(null)
     toast.info('Sincronizando dados do banco...', { autoClose: 2000 })
     
     try {
-      // Sincronizar dados do item
-      const itemsResponse = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: itemData.item.id }),
-      })
-
-      if (!itemsResponse.ok) {
-        const errorData = await itemsResponse.json()
-        throw new Error(errorData.error || 'Erro ao sincronizar dados')
-      }
-
-      const itemsData = await itemsResponse.json()
+      // Usar syncItem do hook para sincronizar
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:155',message:'Calling syncItem',data:{itemId:itemData.item.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      const success = await syncItem(itemData.item.id)
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.tsx:157',message:'syncItem result',data:{success},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       
-      // Verificar se houve erros na sincronização
-      if (itemsData.error) {
-        toast.error(itemsData.error || 'Erro ao salvar dados no banco de dados', { autoClose: 5000 })
-        if (itemsData.details) {
-          console.error('Detalhes do erro:', itemsData.details)
-        }
+      if (!success) {
+        // O erro já foi tratado no hook, apenas retornar
         return
       }
 
-      // Verificar se pelo menos alguns dados foram salvos
-      if (itemsData.errors && itemsData.errors.length > 0) {
-        const hasPartialSuccess = itemsData.accountsSaved > 0 || itemsData.transactionsSaved > 0
-        if (hasPartialSuccess) {
-          toast.warning(`Dados sincronizados parcialmente. ${itemsData.errors.length} erro(s) ocorreram.`, { autoClose: 5000 })
-        } else {
-          toast.error('Falha ao salvar dados. Verifique a configuração do banco de dados.', { autoClose: 5000 })
-          return
-        }
-      }
-
-      // Aguardar um pouco para garantir que os dados foram salvos
-      await new Promise(resolve => setTimeout(resolve, 1000))
-
-      // Recarregar dados
+      // Recarregar dados de bancos e connectors
       const connectorsResponse = await fetch('/api/connectors')
       if (!connectorsResponse.ok) {
         const errorData = await connectorsResponse.json()
@@ -253,32 +198,6 @@ export default function Home() {
           toast.error(banksData.error || 'Erro ao recarregar bancos conectados')
         } else {
           setBanks(banksData.banks || [])
-        }
-      }
-
-      const accountsResponse = await fetch('/api/accounts')
-      if (!accountsResponse.ok) {
-        const errorData = await accountsResponse.json()
-        toast.error(errorData.error || 'Erro ao recarregar contas')
-      } else {
-        const accountsData = await accountsResponse.json()
-        if (accountsData.error) {
-          toast.error(accountsData.error || 'Erro ao recarregar contas')
-        } else {
-          setAccounts(accountsData.accounts || [])
-        }
-      }
-
-      const transactionsResponse = await fetch('/api/transactions?limit=100')
-      if (!transactionsResponse.ok) {
-        const errorData = await transactionsResponse.json()
-        toast.error(errorData.error || 'Erro ao recarregar transações')
-      } else {
-        const transactionsData = await transactionsResponse.json()
-        if (transactionsData.error) {
-          toast.error(transactionsData.error || 'Erro ao recarregar transações')
-        } else {
-          setTransactions(transactionsData.transactions || [])
         }
       }
 
@@ -324,8 +243,7 @@ export default function Home() {
     .reduce((sum, acc) => sum + (acc.balance || 0), 0)
 
   // Calcular limite disponível (limite de crédito - fatura atual)
-  const availableLimit = accounts
-    .filter(acc => acc.subtype === 'credit_card')
+  const availableLimit = creditCards
     .reduce((sum, acc) => {
       // Assumindo que o balance negativo é a fatura e precisamos calcular o limite disponível
       // Se não houver limite explícito, usamos um valor padrão ou calculamos baseado no saldo
@@ -343,7 +261,22 @@ export default function Home() {
     if (type) {
       return accounts.filter(acc => acc.type === type)
     }
-    return accounts.filter(acc => acc.type !== 'credit' && acc.subtype !== 'credit_card')
+    // Retornar contas bancárias e investimentos, excluindo cartões de crédito e empréstimos
+    return accounts.filter(acc => 
+      acc.subtype !== 'credit_card' && 
+      acc.type !== 'credit' && 
+      acc.type !== 'loan'
+    )
+  }
+
+  // Obter contas de investimento
+  const getInvestmentAccounts = () => {
+    return accounts.filter(acc => 
+      acc.type === 'investment' || 
+      acc.subtype === 'investment' ||
+      acc.subtype === 'brokerage' ||
+      acc.subtype === 'mutual_fund'
+    )
   }
 
   // Extrair últimos 4 dígitos
@@ -361,6 +294,60 @@ export default function Home() {
   const getBankName = (account: Account) => {
     const bank = banks.find(b => b.itemId === account.itemId)
     return bank?.bankName || 'Banco'
+  }
+
+  // Obter label amigável do tipo de conta
+  const getAccountTypeLabel = (account: Account): string => {
+    // Cartão de crédito
+    if (account.subtype === 'credit_card') {
+      return 'Cartão de Crédito'
+    }
+    // Investimentos
+    if (account.type === 'investment' || account.subtype === 'investment') {
+      return 'Investimento'
+    }
+    // Conta corrente/poupança
+    if (account.subtype === 'checking' || account.subtype === 'savings') {
+      return 'Conta Bancária'
+    }
+    // Empréstimo
+    if (account.type === 'loan') {
+      return 'Empréstimo'
+    }
+    // Default: Conta Bancária
+    if (account.type === 'bank' || !account.type) {
+      return 'Conta Bancária'
+    }
+    // Fallback: usar o tipo/subtype original
+    return account.subtype || account.type || 'Conta'
+  }
+
+  // Obter ícone baseado no tipo de conta
+  const getAccountIcon = (account: Account) => {
+    if (account.subtype === 'credit_card') {
+      return CreditCard
+    }
+    if (account.type === 'investment' || account.subtype === 'investment') {
+      return TrendingUp
+    }
+    if (account.type === 'loan') {
+      return FileText
+    }
+    return Building2
+  }
+
+  // Obter cor do badge baseado no tipo
+  const getAccountTypeBadgeColor = (account: Account): string => {
+    if (account.subtype === 'credit_card') {
+      return 'bg-purple-100 text-purple-700 border-purple-200'
+    }
+    if (account.type === 'investment' || account.subtype === 'investment') {
+      return 'bg-blue-100 text-blue-700 border-blue-200'
+    }
+    if (account.type === 'loan') {
+      return 'bg-red-100 text-red-700 border-red-200'
+    }
+    return 'bg-green-100 text-green-700 border-green-200'
   }
 
   return (
@@ -481,7 +468,38 @@ export default function Home() {
                 <CardContent>
                   <ScrollArea className="h-[500px]">
                     {loading ? (
-                      <p className="text-center py-8 text-muted-foreground">Carregando...</p>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Descrição</TableHead>
+                            <TableHead>Categoria</TableHead>
+                            <TableHead>Valor</TableHead>
+                            <TableHead>Conta</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {Array.from({ length: 5 }).map((_, index) => (
+                            <TableRow key={index}>
+                              <TableCell>
+                                <Skeleton className="h-4 w-20" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-32" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-6 w-24 rounded-full" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-24" />
+                              </TableCell>
+                              <TableCell>
+                                <Skeleton className="h-4 w-28" />
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
                     ) : transactions.length === 0 ? (
                       <p className="text-center py-8 text-muted-foreground">Nenhuma transação encontrada</p>
                     ) : (
@@ -530,7 +548,22 @@ export default function Home() {
             {/* Aba Contas */}
             <TabsContent value="accounts" className="space-y-4">
               {loading ? (
-                <p className="text-center py-8 text-muted-foreground">Carregando...</p>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <Card key={index}>
+                      <CardHeader>
+                        <Skeleton className="h-6 w-32 mb-2" />
+                        <Skeleton className="h-4 w-24" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-16" />
+                          <Skeleton className="h-8 w-32" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               ) : getAccountsByType().length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
@@ -539,32 +572,37 @@ export default function Home() {
                 </Card>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {getAccountsByType().map((account) => (
-                    <Card key={account.id}>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                          <Building2 className="h-5 w-5 text-slate-400" />
-                        </div>
-                        <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2">
-                          <div>
-                            <p className="text-sm text-muted-foreground">Saldo</p>
-                            <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
-                            </p>
+                  {getAccountsByType().map((account) => {
+                    const AccountIcon = getAccountIcon(account)
+                    const typeLabel = getAccountTypeLabel(account)
+                    const badgeColor = getAccountTypeBadgeColor(account)
+                    return (
+                      <Card key={account.id}>
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
+                            <AccountIcon className="h-5 w-5 text-slate-400" />
                           </div>
-                          <div>
-                            <span className="px-2 py-1 text-xs rounded-full bg-slate-100 text-slate-700">
-                              {account.type} {account.subtype ? `- ${account.subtype}` : ''}
+                          <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
+                          <div className="mt-2">
+                            <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${badgeColor}`}>
+                              {typeLabel}
                             </span>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div>
+                              <p className="text-sm text-muted-foreground">Saldo</p>
+                              <p className={`text-2xl font-bold ${account.balance && account.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {account.currencyCode || 'R$'} {account.balance?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
+                              </p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
               )}
             </TabsContent>
@@ -572,8 +610,23 @@ export default function Home() {
             {/* Aba Cartões */}
             <TabsContent value="cards" className="space-y-4">
               {loading ? (
-                <p className="text-center py-8 text-muted-foreground">Carregando...</p>
-              ) : getAccountsByType(undefined, 'credit_card').length === 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <Card key={index}>
+                      <CardHeader>
+                        <Skeleton className="h-6 w-32 mb-2" />
+                        <Skeleton className="h-4 w-24" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-20" />
+                          <Skeleton className="h-8 w-32" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : creditCards.length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">
                     Nenhum cartão encontrado
@@ -581,14 +634,19 @@ export default function Home() {
                 </Card>
               ) : (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {getAccountsByType(undefined, 'credit_card').map((account) => (
+                  {creditCards.map((account) => (
                     <Card key={account.id}>
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle className="text-lg">{getBankName(account)}</CardTitle>
-                          <CreditCard className="h-5 w-5 text-slate-400" />
+                          <CreditCard className="h-5 w-5 text-purple-500" />
                         </div>
                         <CardDescription>•••• {getLastFourDigits(account)}</CardDescription>
+                        <div className="mt-2">
+                          <span className="px-3 py-1 text-xs font-semibold rounded-full border bg-purple-100 text-purple-700 border-purple-200">
+                            Cartão de Crédito
+                          </span>
+                        </div>
                       </CardHeader>
                       <CardContent>
                         <div className="space-y-2">
@@ -609,7 +667,22 @@ export default function Home() {
             {/* Aba Empréstimos */}
             <TabsContent value="loans" className="space-y-4">
               {loading ? (
-                <p className="text-center py-8 text-muted-foreground">Carregando...</p>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <Card key={index}>
+                      <CardHeader>
+                        <Skeleton className="h-6 w-32 mb-2" />
+                        <Skeleton className="h-4 w-24" />
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-24" />
+                          <Skeleton className="h-8 w-32" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               ) : getAccountsByType('loan').length === 0 ? (
                 <Card>
                   <CardContent className="py-8 text-center text-muted-foreground">

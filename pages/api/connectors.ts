@@ -47,9 +47,16 @@ export default async function handler(
     // Buscar itemIds do Supabase
     let itemIdsFromSupabase: string[] = [];
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'connectors.ts:52',message:'Before select itemId',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       const { data: accounts, error } = await supabase
         .from('accounts')
-        .select('itemId');
+        .select('*'); // Mudado para * para ver todas as colunas
+      
+      // #region agent log
+      fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'connectors.ts:58',message:'After select accounts',data:{hasError:!!error,errorCode:error?.code,errorMessage:error?.message,accountsCount:accounts?.length||0,firstAccountKeys:accounts?.[0]?Object.keys(accounts[0]):null,firstAccount:accounts?.[0]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
       
       if (error) {
         // Se tabela não existe, usar array vazio
@@ -63,7 +70,11 @@ export default async function handler(
           });
         }
       } else {
-        itemIdsFromSupabase = accounts?.map(acc => acc.itemId).filter(Boolean) || [];
+        // Tentar ambos os formatos: itemId (camelCase) e itemid (lowercase)
+        itemIdsFromSupabase = accounts?.map(acc => acc.itemId || acc.itemid).filter(Boolean) || [];
+        // #region agent log
+        fetch('http://127.0.0.1:7247/ingest/1fb6138e-fba8-456c-a707-86cad2780fdd',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'connectors.ts:70',message:'Extracted itemIds',data:{itemIdsCount:itemIdsFromSupabase.length,firstItemId:itemIdsFromSupabase[0]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
       }
     } catch (err: any) {
       console.error('Error accessing Supabase:', err);

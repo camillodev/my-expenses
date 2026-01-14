@@ -58,39 +58,35 @@ export default async function handler(
               itemId: account.itemId 
             }, {
               onConflict: 'id'
-            });
+            })
+            .select();
 
           if (accountError) {
             const errorMsg = `Erro ao salvar conta ${account.id}: ${accountError.message}`;
-            console.error(errorMsg);
-            errors.push(errorMsg);
-          } else if (!accountData || accountData.length === 0) {
-            const errorMsg = `Falha ao salvar conta ${account.id}: nenhum dado retornado`;
             console.error(errorMsg);
             errors.push(errorMsg);
           }
 
           // Salvar/atualizar transações no Supabase
           if (accountTransactions.length > 0) {
-            const { error: txError, data: txData } = await supabase.from('transactions').upsert(
-              accountTransactions.map((tx) => ({
-                id: tx.id,
-                accountId: tx.accountId,
-                amount: tx.amount,
-                category: tx.category,
-                date: tx.date,
-              })),
-              {
-                onConflict: 'id'
-              }
-            );
+            const { error: txError, data: txData } = await supabase
+              .from('transactions')
+              .upsert(
+                accountTransactions.map((tx) => ({
+                  id: tx.id,
+                  accountId: tx.accountId,
+                  amount: tx.amount,
+                  category: tx.category,
+                  date: tx.date,
+                })),
+                {
+                  onConflict: 'id'
+                }
+              )
+              .select();
 
             if (txError) {
               const errorMsg = `Erro ao salvar transações da conta ${account.id}: ${txError.message}`;
-              console.error(errorMsg);
-              errors.push(errorMsg);
-            } else if (!txData || txData.length === 0) {
-              const errorMsg = `Falha ao salvar transações da conta ${account.id}: nenhum dado retornado`;
               console.error(errorMsg);
               errors.push(errorMsg);
             }

@@ -35,7 +35,7 @@ export default async function handler(
 
     const { data: transactions, error } = await supabase
       .from('transactions')
-      .select('*, accounts!inner(*)')
+      .select('*, accounts!fk_transactions_account(*)')
       .eq('accounts.itemId', itemId);
 
     if (error) {
